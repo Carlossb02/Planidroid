@@ -95,19 +95,22 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         db.withTransaction { for(e in entries) { if(dao.get(s,e.id)==null) { dao.save(s,e.id,e.kind.name,e.payload); count++ } } }
         entries.filter{it.kind==Kind.TASK}.forEach{e->dao.get(s,e.id)?.takeUnless{it.deleted}?.let{Reminders.update(getApplication(),s,decode<Task>(it.payload))}};setting(b.theme,b.glass);message.value="Importados $count de ${entries.size} elementos. Los existentes no se sobrescriben."
     } }
-    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.stop(getApplication(),uid); syncState.value="Cuenta conectada. Comprueba la autorización para sincronizar." } finally { busy.value=false } } }
+    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.schedule(getApplication(),uid); syncState.value="Cuenta conectada. Comprueba la autorización para sincronizar." } finally { busy.value=false } } }
     fun logout() { Cloud.stop(getApplication(),scope.value); auth?.signOut(); syncState.value="Sin sincronizar" }
-    fun automaticSync()=Cloud.automatic(getApplication(),scope.value)
+    val automaticSync=scope.map{uid->uid!="local"&&Cloud.automatic(app,uid)}.stateIn(viewModelScope,SharingStarted.Eagerly,false)
+    private val _automaticOverride=MutableStateFlow<Pair<String,Boolean>?>(null)
+    val autoSyncEnabled=combine(scope,automaticSync,_automaticOverride){uid,auto,override->override?.takeIf{it.first==uid}?.second?:auto}.stateIn(viewModelScope,SharingStarted.Eagerly,false)
     fun setAutomaticSync(enabled:Boolean){val uid=scope.value;if(uid=="local")return;run{
         if(enabled)Cloud.requireApproval(getApplication(),uid)
         Cloud.setAutomatic(getApplication(),uid,enabled)
+        _automaticOverride.value=uid to enabled
         message.value=if(enabled)"Sincronización automática cada 6 horas aproximadamente" else "Sincronización manual"
     }}
     fun sync() { val s=scope.value; if(s=="local"||busy.value) return; busy.value=true;run {
         syncState.value="Sincronizando…"
         try { Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
         catch(e: CancellationException) { throw e }
-        catch(e:Cloud.ApprovalRequired){Cloud.setAutomatic(getApplication(),s,false);syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
+        catch(e:Cloud.ApprovalRequired){Cloud.setAutomatic(getApplication(),s,false);_automaticOverride.value=s to false;syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
         catch(e:Exception) { syncState.value="Error o conflicto"; message.value=e.localizedMessage ?: "Sin conexión" }
         finally{busy.value=false}
     } }

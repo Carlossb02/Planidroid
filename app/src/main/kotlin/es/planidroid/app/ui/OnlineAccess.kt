@@ -30,7 +30,7 @@ val LocalOnlineAccess = compositionLocalOf<(String)->Unit> { {} }
         title={Text("Conecta tu cuenta",style=MaterialTheme.typography.headlineSmall)},
         text={
             Column(verticalArrangement=Arrangement.spacedBy(14.dp)){
-                Text("Para "+feature+" necesitas iniciar sesión con Google.")
+                Text("Para "+feature+" necesitas iniciar sesión con Google y tener la cuenta autorizada por el administrador.")
                 Row(verticalAlignment=Alignment.Top,horizontalArrangement=Arrangement.spacedBy(8.dp)){
                     Icon(Icons.Outlined.Lock,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
                     Text("Tus datos locales siguen separados de tu cuenta. Nada se comparte sin tu permiso.",style=MaterialTheme.typography.bodySmall)

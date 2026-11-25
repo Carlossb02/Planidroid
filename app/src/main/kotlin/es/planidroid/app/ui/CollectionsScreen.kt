@@ -34,6 +34,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
         scope.launch{
             try{action(cloud);val r=cloud.list();spaces=r.first;invites=r.second}
             catch(e:CancellationException){throw e}
+            catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
             finally{busy=false}
         }
@@ -55,6 +56,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             Text("Compartido",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
             IconButton(onClick={state.work()},enabled=!state.busy){Icon(Icons.Outlined.Refresh,"Actualizar")}
         }
+        Text("Pulsa actualizar para consultar tus listas, hogares e invitaciones online.",style=MaterialTheme.typography.bodySmall)
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(state.error.isNotBlank())Text(state.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
         state.invites.forEach{m->GlassCard(tint=Lilac){
