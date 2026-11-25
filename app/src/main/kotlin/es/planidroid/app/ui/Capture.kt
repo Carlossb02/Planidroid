@@ -34,23 +34,24 @@ import kotlinx.coroutines.launch
     var consent by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var connect by remember{mutableStateOf(false)}
-    fun interpret() {
+    fun interpret(followUp:Boolean=false) {
         val request=input.trim()
         if(request.isBlank()||busy)return
         busy=true; error=""
         coroutine.launch {
             try {
-                val proposal=AiConfig.provider(context,uid).parseNaturalLanguage(request.take(6000)+"\nAgenda ocupada (referencia, no cambiar): "+availability.take(5000))
+                val clarification=if(followUp)questions.mapIndexed{i,q->q.question+"\nRespuesta: "+answers[i].orEmpty()}.joinToString("\n").take(3000)else ""
+                val proposal=AiConfig.provider(context,uid).parseNaturalLanguage(request.take(6000)+(if(followUp)"\nACLARACIONES DEL USUARIO (prioritarias): "+clarification+"\nDevuelve propuesta final, no hagas más preguntas." else "")+"\nAgenda ocupada: "+availability.take(2500))
                 val tasks=proposal.tasks
                 check(tasks.isNotEmpty()){"Gemini no devolvió tareas. Añade más información."}
-                draft=tasks.map { t -> t.copy(id=newId(),planHints=PlanningPreferences.merge(t.planHints,SmartCapture.hints(if(tasks.size==1)request else t.description,t.due,java.time.LocalDate.now()),if(tasks.size==1)request else t.description)) }
-                questions=CaptureClarifications.questions(proposal.copy(tasks=draft.orEmpty()));answers=emptyMap();assumptions=proposal.assumptions.take(2)
+                draft=tasks.map { t -> t.copy(id=newId(),planHints=PlanningPreferences.merge(t.planHints,SmartCapture.hints(if(tasks.size==1&&!followUp)request else t.description,t.due,java.time.LocalDate.now()),if(tasks.size==1&&!followUp)request else t.description)) }
+                questions=if(followUp)emptyList()else CaptureClarifications.questions(proposal.copy(tasks=draft.orEmpty()));answers=emptyMap();assumptions=proposal.assumptions.take(2)
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { error=e.localizedMessage?:"No se pudo usar Gemini." }
             finally { busy=false }
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp).padding(top=16.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         val review=draft!=null
         run {
             Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -67,9 +68,13 @@ import kotlinx.coroutines.launch
                     Section("Tu propuesta","Revisa y ajusta lo necesario.")
                     if(questions.isNotEmpty())GlassCard(tint=Lilac){
                         Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Solo necesito aclarar esto",style=MaterialTheme.typography.titleMedium)}
-                        questions.forEachIndexed{i,q->Text(q.question);if(q.field=="due")DateField(answers[i].orEmpty(),{answers=answers+(i to it)},"Fecha",false)else Field(answers[i].orEmpty(),{answers=answers+(i to it.take(1000))},when(q.field){"minutes"->"Minutos";"topicCount"->"Temas";"window"->"Horario";else->"Respuesta"})}
-                        Button(enabled=questions.indices.all{i->val q=questions[i];draft.orEmpty().getOrNull(q.taskIndex)?.let{CaptureClarifications.apply(it,q.field,answers[i].orEmpty())}!=null},onClick={val next=draft.orEmpty().toMutableList();questions.forEachIndexed{i,q->CaptureClarifications.apply(next[q.taskIndex],q.field,answers[i].orEmpty())?.let{next[q.taskIndex]=it}};draft=next;questions=emptyList();answers=emptyMap()}){Text("Aplicar respuestas")}
-                        TextButton(onClick={questions=emptyList();answers=emptyMap()}){Text("Prefiero completar a mano")}
+                        questions.forEachIndexed{i,q->Text(q.question);OutlinedTextField(answers[i].orEmpty(),{answers=answers+(i to it.take(1500))},Modifier.fillMaxWidth(),placeholder={Text("Responde con tus palabras")},minLines=2,enabled=!busy,shape=RoundedCornerShape(16.dp))}
+                        Button(enabled=!busy&&questions.indices.any{answers[it].orEmpty().isNotBlank()},onClick={
+                            val simple=questions.indices.all{i->val q=questions[i];val a=answers[i].orEmpty().trim();val exact=when(q.field){"topicCount","minutes"->a.matches(Regex("[0-9]+")); "due"->a.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}"));else->false};exact&&draft.orEmpty().getOrNull(q.taskIndex)?.let{CaptureClarifications.apply(it,q.field,a)}!=null}
+                            if(simple){val next=draft.orEmpty().toMutableList();questions.forEachIndexed{i,q->CaptureClarifications.apply(next[q.taskIndex],q.field,answers[i].orEmpty())?.let{next[q.taskIndex]=it}};draft=next;questions=emptyList();answers=emptyMap()}else interpret(true)
+                        },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text(if(busy)"Interpretando…" else "Continuar")}
+                        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+                        TextButton(enabled=!busy,onClick={questions=emptyList();answers=emptyMap()}){Text("Prefiero completar a mano")}
                     }
                     if(assumptions.isNotEmpty())Text(assumptions.joinToString(" · "),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     draft.orEmpty().forEachIndexed { index,task -> key(task.id) {
@@ -83,12 +88,12 @@ import kotlinx.coroutines.launch
                                 if(task.phases.isNotEmpty()) Text("${task.phases.size} fases",style=MaterialTheme.typography.labelLarge)
                             }
                             if(task.planHints.windowStart.isNotBlank())Text("Horario: "+task.planHints.windowStart+" – "+task.planHints.windowEnd,style=MaterialTheme.typography.bodySmall)
-                            if(task.planHints.daysPerWeek>0) Text("Disponibilidad: "+task.planHints.daysPerWeek+" días por semana",style=MaterialTheme.typography.bodySmall)
-                            if(task.planHints.minutesPerTopic>0) Text("Por tema: "+task.planHints.minutesPerTopic+" min",style=MaterialTheme.typography.bodySmall)
+                            if(details&&task.planHints.daysPerWeek>0) Text("Disponibilidad: "+task.planHints.daysPerWeek+" días por semana",style=MaterialTheme.typography.bodySmall)
+                            if(details&&task.planHints.minutesPerTopic>0) Text("Por tema: "+task.planHints.minutesPerTopic+" min",style=MaterialTheme.typography.bodySmall)
                             if(task.minutes==0&&task.planHints.explanation.isNotBlank()) Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.breakMinutes>0)Text("Bloques de "+task.planHints.sessionLimit+" min · pausas de "+task.planHints.breakMinutes+" min",style=MaterialTheme.typography.bodySmall)
-                            if(task.planHints.breakReason.isNotBlank())Text(task.planHints.breakReason,style=MaterialTheme.typography.bodySmall)
-                            if(task.planHints.dailyMinutes>0) Text("Máximo diario: "+task.planHints.dailyMinutes+" min",style=MaterialTheme.typography.bodySmall)
+                            if(details&&task.planHints.breakReason.isNotBlank())Text(task.planHints.breakReason,style=MaterialTheme.typography.bodySmall)
+                            if(details&&task.planHints.dailyMinutes>0) Text("Máximo diario: "+task.planHints.dailyMinutes+" min",style=MaterialTheme.typography.bodySmall)
                             if(details)task.phases.take(8).forEach{Text("• ${it.title}",style=MaterialTheme.typography.bodyMedium)}
                             TextButton(onClick={details=!details}){Text(if(details)"Ocultar detalles" else "Ajustar detalles")}
                             if(details){Field(task.title,{update(task.copy(title=it))},"Título");Field(task.description,{update(task.copy(description=it))},"Notas",false);DateField(task.due,{update(task.copy(due=it,category=if(it.isBlank())Category.INBOX else Category.DEADLINE))},"Fecha límite");Field(if(task.minutes==0)"" else task.minutes.toString(),{v->if(v.isBlank())update(task.copy(minutes=0))else v.toIntOrNull()?.takeIf{it in 1..100000}?.let{update(task.copy(minutes=it))}},"Duración (min)")}

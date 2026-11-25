@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
     phaseEdit?.let{p->PhaseDetail(p,{phaseEdit=null},{v->t=t.copy(phases=t.phases.map{if(it.id==v.id)v else it});phaseEdit=null})}
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
-@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>)->Unit,external:List<Interval> = emptyList(),allTasks:List<Task> = emptyList(),uid:String="local",openAgenda:(Task)->Unit={}){
+@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>,(String?)->Unit)->Unit,external:List<Interval> = emptyList(),allTasks:List<Task> = emptyList(),uid:String="local",openAgenda:(Task)->Unit={}){
     val today=LocalDate.now()
     val capturedNow=remember(task.id){System.currentTimeMillis()}
     var planningNow by remember(task.id){mutableLongStateOf(capturedNow+30_000L)}
@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
     val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow&&it.calendarTitle.isBlank()}
     val kept=existing.filterNot{it in previous}
     val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&!it.isBreak&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
-    val otherReserved=kept.filter{it.taskId==task.id&&!it.isBreak&&!it.done}.sumOf{((it.end-it.start)/60000).toInt()}
+    val otherReserved=kept.filter{it.taskId==task.id&&!it.isBreak&&!it.done&&it.end>capturedNow}.sumOf{((it.end-it.start)/60000).toInt()}
     var hints by remember(task.id){mutableStateOf(task.planHints)}
     var plannedPhases by remember(task.id){mutableStateOf(task.phases)}
     var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
@@ -64,11 +64,12 @@ import kotlinx.coroutines.launch
     var compact by remember(task.id){mutableStateOf(hints.compact)}
     var daily by remember(task.id){mutableStateOf(hints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
     var countText by remember(task.id){mutableStateOf(hints.topicCount.takeIf{it>0}?.toString().orEmpty())}
-    var minutesText by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,kept).takeIf{it>0}?.toString().orEmpty())}
+    var minutesText by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,kept,capturedNow).takeIf{it>0}?.toString().orEmpty())}
     var days by remember(task.id){mutableStateOf(StudyIntent.availableDays(hints))}
     var revision by remember(task.id){mutableStateOf("")}
     var feedback by remember(task.id){mutableStateOf("")}
     var advanced by remember{mutableStateOf(false)}
+    var aiOptions by remember{mutableStateOf(false)}
     var approved by remember(task.id){mutableStateOf(false)}
     val count=StudyIntent.topicsAnswer(countText)
     val total=if(hints.minutesPerTopic>0)count?.let{runCatching{StudyIntent.studyMinutes(hints,it)}.getOrNull()} else minutesText.toIntOrNull()?.takeIf{it in 1..100000}?.let{(it.toLong()+doneMinutes+otherReserved).takeIf{n->n<=100000}?.toInt()}
@@ -129,35 +130,37 @@ import kotlinx.coroutines.launch
         hints=hints.copy(availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=hints.excludedWeekdays.filterNot{it==day.value})
         feedback=""
     }
-    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){
-        Surface(Modifier.fillMaxWidth().fillMaxHeight(.95f).padding(10.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(24.dp)){
-            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
+    Dialog(onDismissRequest={if(!approved)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+        Surface(Modifier.fillMaxSize()){
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){IconButton(enabled=!approved,onClick=close){Icon(Icons.Default.Close,"Cerrar")};Column(Modifier.weight(1f)){Text("Planificación",style=MaterialTheme.typography.titleLarge);Text(task.title,maxLines=2,style=MaterialTheme.typography.bodySmall)}}
+            HorizontalDivider()
+            LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                 item{
-                    Section(if(previous.isEmpty())"Tu plan" else "Reorganizar mi agenda",task.title)
-                    Text("Fecha límite: "+deadline,style=MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.CalendarToday,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(deadline,style=MaterialTheme.typography.titleMedium)}
                     if(hints.minutesPerTopic>0){
                         Text("¿Cuántos temas tienes que estudiar?",style=MaterialTheme.typography.titleLarge)
                         Text((hints.minutesPerTopic/60.0).let{if(it%1.0==0.0)it.toInt().toString() else it.toString()}+" h por tema",style=MaterialTheme.typography.bodyMedium)
                         Field(countText,{countText=it},"Número de temas")
                         if(total!=null)Text(total.toString()+" min en total · "+remaining+" min pendientes",style=MaterialTheme.typography.titleMedium)
                     }else{
-                        if(hints.explanation.isNotBlank())Text(hints.explanation,style=MaterialTheme.typography.bodySmall)
+                        if(remaining==null&&hints.explanation.isNotBlank())Text(hints.explanation,style=MaterialTheme.typography.bodySmall)
                         Field(minutesText,{minutesText=it},"Tiempo pendiente (min)")
                     }
-                    if(previous.isNotEmpty())Text("Se sustituirán "+previous.size+" sesiones futuras. El trabajo completado se conserva.",style=MaterialTheme.typography.bodySmall)
+                    if(previous.isNotEmpty())Text("Reorganizar "+previous.size+" sesiones futuras",style=MaterialTheme.typography.labelMedium)
                 }
                 item{
                     GlassCard(tint=Blue){
                         Text("Cuándo puedes estudiar",style=MaterialTheme.typography.titleLarge)
                         if(hints.daysPerWeek>0&&hints.availableWeekdays.isEmpty())Text("Propuesta de "+hints.daysPerWeek+" días semanales. Puedes cambiarlos.",style=MaterialTheme.typography.bodySmall)
-                        Text(days.sortedBy{it.value}.joinToString(", "){weekdayLabels[it.value-1]}.ifBlank{"Selecciona al menos un día"},style=MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
                             DayOfWeek.entries.forEach{d->FilterChip(selected=d in days,onClick={toggleDay(d)},label={Text(shortLabels[d.value-1])},modifier=Modifier.weight(1f))}
                         }
-                        Field(revision,{revision=it.take(300)},"Cambiar con texto")
+                        TextButton(onClick={aiOptions=!aiOptions}){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(6.dp));Text(if(aiOptions)"Ocultar Gemini" else "Ajustar con Gemini")}
+                        if(aiOptions){Field(revision,{revision=it.take(1500)},"¿Qué quieres cambiar?",false)
                         OutlinedButton(onClick={applyRevision()},enabled=revision.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Recalcular")}
                         if(hints.breakReason.isNotBlank())Text(hints.breakReason,style=MaterialTheme.typography.bodySmall)
-                        TextButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true}){Text(if(aiBusy)"Consultando…" else "Optimizar con Gemini")}
+                        TextButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true}){Text(if(aiBusy)"Consultando…" else "Optimizar con Gemini")}}
                         if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
                         Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Schedule,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(from+" – "+until,style=MaterialTheme.typography.titleMedium)}
                         Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Timer,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("$max min por bloque · $pause min de pausa",style=MaterialTheme.typography.bodySmall)}
@@ -204,16 +207,17 @@ import kotlinx.coroutines.launch
                         }
                     }
                 }
-                item{
+            }
+            Surface(tonalElevation=2.dp){Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Button(enabled=!aiBusy&&!approved&&result?.blocks?.isNotEmpty()==true&&total!=null&&(!hasToday||startToday!=null),onClick={
                         val r=result?:return@Button;val effort=total?:return@Button
                         if(r.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){planningNow=System.currentTimeMillis()+30_000L;feedback="El horario ha avanzado. Revisa la propuesta actualizada.";return@Button}
                         approved=true
                         val updated=draftTask.copy(minutes=effort)
-                        accept(updated,r.sessions(keepBreaks),previous)
+                        accept(updated,r.sessions(keepBreaks),previous){failure->approved=false;if(failure!=null){feedback=failure;planningNow=System.currentTimeMillis()+30_000L}}
                     },modifier=Modifier.fillMaxWidth()){Text(if(missing==0)if(previous.isEmpty())"Guardar tarea y agenda" else "Guardar nueva planificación" else "Aceptar plan parcial")}
-                    TextButton(onClick=close){Text("Cancelar")}
-                }
+                    if(approved)LinearProgressIndicator(Modifier.fillMaxWidth());if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
+                }}
             }
         }
     }
