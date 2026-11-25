@@ -175,18 +175,19 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
     var date by remember(s.id){mutableStateOf(sessionDate(s.start).toString())}
     var startText by remember(s.id){mutableStateOf(time(s.start))}
     var duration by remember(s.id){mutableStateOf(((s.end-s.start)/60000).toString())}
+    var done by remember(s.id){mutableStateOf(s.done)}
     var error by remember(s.id){mutableStateOf("")};var confirmDelete by remember(s.id){mutableStateOf(false)}
     AlertDialog(onDismissRequest=close,title={Text(if(s.isBreak)"Descanso" else task?.title?:"Evento")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
         DateField(date,{date=it},"Fecha",false);Field(startText,{startText=it},"Inicio HH:mm");Field(duration,{duration=it},"Duración (min)")
         if(s.isBreak)Text(task?.planHints?.breakReason?.takeIf{it.isNotBlank()}?:"Pausa reservada",style=MaterialTheme.typography.bodySmall)
-        else{Row(verticalAlignment=Alignment.CenterVertically){Checkbox(s.done,{save(s.copy(done=it))});Text("Completada")};if(task!=null)TextButton(onClick={edit(task)}){Text("Abrir tarea")}}
+        else{Row(verticalAlignment=Alignment.CenterVertically){Checkbox(done,{done=it});Text("Completada")};if(task!=null)TextButton(onClick={edit(task)}){Text("Abrir tarea")}}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         TextButton(onClick={confirmDelete=true}){Text(if(s.isBreak)"Eliminar descanso" else "Eliminar sesión",color=MaterialTheme.colorScheme.error)}
     }},confirmButton={TextButton(onClick={
         runCatching{
             val a=LocalDate.parse(date).atTime(LocalTime.parse(startText)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val n=duration.toInt();require(n in 1..1440){"Duración inválida"}
-            val v=s.copy(start=a,end=a+n*60000L)
+            val v=s.copy(start=a,end=a+n*60000L,done=done)
             require(sessions.none{OverlapPolicy.conflict(v,it,tasks)}&&external.none{it.busy&&it.start<v.end&&it.end>v.start}){"Ese horario está ocupado"}
             v
         }.onSuccess(save).onFailure{error=it.message?:"Datos inválidos"}

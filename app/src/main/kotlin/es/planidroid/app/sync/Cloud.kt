@@ -134,6 +134,7 @@ object Cloud {
         val seconds=p.getLong("cursorSeconds",-1L)
         val cursor=if(seconds>=0)Timestamp(seconds,p.getInt("cursorNanos",0))else null
         var newest=cursor
+        var remoteSessionsChanged=false
         val query=if(cursor==null)coll else coll.whereGreaterThanOrEqualTo("updatedAt",cursor)
         for(snap in query.get(Source.SERVER).await().documents) {
             val timestamp=snap.getTimestamp("updatedAt")
@@ -151,21 +152,22 @@ object Cloud {
             }
             if(kind==Kind.FURNITURE.name && old!=null) payload=encode(decode<Furniture>(payload).copy(photo=decode<Furniture>(old.payload).photo))
             if(kind==Kind.ITEM.name && old!=null) payload=encode(decode<Item>(payload).copy(photo=decode<Item>(old.payload).photo))
-            dao.acceptRemote(Record(uid,snap.id,kind,payload,snap.getBoolean("deleted") ?: false,false,version,(old?.revision ?: 0)+1));if(kind==Kind.TASK.name)runCatching{if(snap.getBoolean("deleted")==true)Reminders.cancel(context,uid,snap.id)else Reminders.update(context,uid,decode<Task>(payload))}
+            val accepted=dao.acceptRemote(Record(uid,snap.id,kind,payload,snap.getBoolean("deleted") ?: false,false,version,(old?.revision ?: 0)+1));if(accepted&&kind==Kind.SESSION.name)remoteSessionsChanged=true;if(accepted&&kind==Kind.TASK.name)runCatching{if(snap.getBoolean("deleted")==true)Reminders.cancel(context,uid,snap.id)else Reminders.update(context,uid,decode<Task>(payload))}
         }
         newest?.let{p.edit().putLong("cursorSeconds",it.seconds).putInt("cursorNanos",it.nanoseconds).commit()}
-        SessionReminders.refresh(context,uid)
-        prefs(context,uid).edit().putLong("lastSuccess",System.currentTimeMillis()).apply()
+        if(remoteSessionsChanged)SessionReminders.refresh(context,uid)
         val shared=SharedCloud(context)
         val sharedConflicts=shared.flushPending()
         if(shared.hasCache()&&shared.needsRefresh())shared.list()
-        ServiceHealth.mark(context,uid,"firestore",true)
+        ServiceHealth.mark(context,uid,"firestore",conflicts==0&&sharedConflicts==0)
         check(conflicts == 0 && sharedConflicts==0) { "${conflicts+sharedConflicts} conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
+        prefs(context,uid).edit().putLong("lastSuccess",System.currentTimeMillis()).apply()
+        Unit
     }
     fun schedule(context: Context, uid: String) {
         if(!automatic(context,uid)){stop(context,uid);return}
         val request = PeriodicWorkRequestBuilder<SyncWorker>(6,TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setInputData(workDataOf("uid" to uid)).build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork("sync-$uid",ExistingPeriodicWorkPolicy.UPDATE,request)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork("sync-$uid",ExistingPeriodicWorkPolicy.KEEP,request)
     }
 }
 class SyncWorker(context: Context, params: WorkerParameters): CoroutineWorker(context,params) {

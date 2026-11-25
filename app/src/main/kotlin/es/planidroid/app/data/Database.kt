@@ -19,7 +19,11 @@ data class Record(val scope: String, val id: String, val kind: String, val paylo
         put(Record(scope,id,kind,payload,deleted,true,old?.baseVersion ?: 0,(old?.revision ?: 0)+1))
     }
     @Transaction suspend fun remove(scope: String,id: String) { get(scope,id)?.let { save(scope,id,it.kind,it.payload,true) } }
-    @Transaction suspend fun acceptRemote(record: Record) { if (get(record.scope,record.id)?.dirty != true) put(record) }
+    @Transaction suspend fun acceptRemote(record: Record):Boolean {
+        val current=get(record.scope,record.id)
+        if(current!=null&&(current.dirty||current.baseVersion>=record.baseVersion))return false
+        put(record.copy(revision=(current?.revision?:0)+1));return true
+    }
 }
 @Database(entities=[Record::class],version=1,exportSchema=false)
 abstract class PlanidroidDb : RoomDatabase() {
