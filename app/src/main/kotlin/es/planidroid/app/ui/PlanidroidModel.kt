@@ -95,7 +95,7 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         db.withTransaction { for(e in entries) { if(dao.get(s,e.id)==null) { dao.save(s,e.id,e.kind.name,e.payload); count++ } } }
         entries.filter{it.kind==Kind.TASK}.forEach{e->dao.get(s,e.id)?.takeUnless{it.deleted}?.let{Reminders.update(getApplication(),s,decode<Task>(it.payload))}};setting(b.theme,b.glass);message.value="Importados $count de ${entries.size} elementos. Los existentes no se sobrescriben."
     } }
-    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.schedule(getApplication(),uid); syncState.value="Cuenta conectada. Comprueba la autorización para sincronizar." } finally { busy.value=false } } }
+    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.stop(getApplication(),uid); try { val allowed=Cloud.registerApproval(getApplication(),uid); if(scope.value==uid){syncState.value=if(allowed)"Cuenta autorizada. Lista para sincronizar." else "Pendiente de autorización";if(allowed)Cloud.schedule(getApplication(),uid)} } catch(e:CancellationException){throw e}catch(e:Exception){if(scope.value==uid){syncState.value="No se pudo comprobar la autorización";message.value=approvalError(e)}} } finally { busy.value=false } } }
     fun logout() { Cloud.stop(getApplication(),scope.value); auth?.signOut(); syncState.value="Sin sincronizar" }
     val automaticSync=scope.map{uid->uid!="local"&&Cloud.automatic(app,uid)}.stateIn(viewModelScope,SharingStarted.Eagerly,false)
     private val _automaticOverride=MutableStateFlow<Pair<String,Boolean>?>(null)
@@ -106,12 +106,13 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         _automaticOverride.value=uid to enabled
         message.value=if(enabled)"Sincronización automática cada 6 horas aproximadamente" else "Sincronización manual"
     }}
+    private fun approvalError(e:Exception):String=if(e is com.google.firebase.firestore.FirebaseFirestoreException && e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Firestore deniega el acceso. Comprueba que las reglas de Planidroid estén publicadas en el proyecto correcto y que el UID coincida." else e.localizedMessage?:"Sin conexión"
     fun sync() { val s=scope.value; if(s=="local"||busy.value) return; busy.value=true;run {
         syncState.value="Sincronizando…"
-        try { Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
+        try { if(!Cloud.registerApproval(getApplication(),s))throw Cloud.ApprovalRequired();Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
         catch(e: CancellationException) { throw e }
         catch(e:Cloud.ApprovalRequired){Cloud.setAutomatic(getApplication(),s,false);_automaticOverride.value=s to false;syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
-        catch(e:Exception) { syncState.value="Error o conflicto"; message.value=e.localizedMessage ?: "Sin conexión" }
+        catch(e:Exception) { syncState.value="Error o conflicto"; message.value=approvalError(e) }
         finally{busy.value=false}
     } }
     override fun onCleared() { auth?.removeAuthStateListener(listener); super.onCleared() }

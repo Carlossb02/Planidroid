@@ -10,7 +10,18 @@ service cloud.firestore {
     match /approvedUsers/{uid} {
       // A single explicit access check is allowed even before approval.
       allow get: if request.auth != null && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+      // Self-registration is create-only, never approval or revocation.
+      allow create: if request.auth != null && request.auth.uid == uid &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.firebase.sign_in_provider == 'google.com' &&
+        request.resource.data.keys().hasAll(['enabled','email','createdAt']) &&
+        request.resource.data.keys().hasOnly(['enabled','email','createdAt']) &&
+        request.resource.data.enabled == false &&
+        request.resource.data.email is string &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.email.size() <= 254 &&
+        request.resource.data.createdAt == request.time;
+      allow list, update, delete: if false;
     }
     function valid() {
       let d = request.resource.data;

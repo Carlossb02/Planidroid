@@ -39,10 +39,28 @@ object Cloud {
     class ApprovalRequired : IllegalStateException("Tu cuenta está pendiente de autorización. Solicita al administrador que habilite tu UID.")
     private fun prefs(context:Context,uid:String)=context.getSharedPreferences("cloud-sync-$uid",Context.MODE_PRIVATE)
     fun automatic(context:Context,uid:String)=prefs(context,uid).getBoolean("automatic",false)
+    /** Explicit sign-in or access check: create a pending request once, without overwriting admin decisions. */
+    suspend fun registerApproval(context:Context,uid:String):Boolean {
+        val user=auth(context)?.currentUser?:error("Inicia sesión")
+        check(user.uid==uid){"La cuenta ha cambiado"}
+        val email=user.email?:error("La cuenta no tiene correo")
+        val db=FirebaseFirestore.getInstance()
+        val ref=db.collection("approvedUsers").document(uid)
+        val enabled=db.runTransaction { tx ->
+            val snapshot=tx.get(ref)
+            if(snapshot.exists())snapshot.get("enabled")==true
+            else {
+                tx.set(ref,mapOf("enabled" to false,"email" to email,"createdAt" to FieldValue.serverTimestamp()))
+                false
+            }
+        }.await()
+        check(auth(context)?.currentUser?.uid==uid){"La cuenta ha cambiado"}
+        return enabled
+    }
     suspend fun requireApproval(context:Context,uid:String) {
         check(auth(context)?.currentUser?.uid==uid){"Sesión no disponible"}
         val snapshot=FirebaseFirestore.getInstance().collection("approvedUsers").document(uid).get(Source.SERVER).await()
-        if(snapshot.getBoolean("enabled")!=true)throw ApprovalRequired()
+        if(snapshot.get("enabled")!=true)throw ApprovalRequired()
     }
     fun stop(context:Context,uid:String) {
         if(uid!="local")WorkManager.getInstance(context).cancelUniqueWork("sync-$uid")
