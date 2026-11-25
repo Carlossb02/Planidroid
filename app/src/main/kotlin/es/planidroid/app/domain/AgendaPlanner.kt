@@ -5,12 +5,14 @@ import java.time.*
 data class AgendaInput(val taskId:String,val title:String,val minutes:Int,val deadline:LocalDate,val priority:Int,val phases:List<Pair<String,Int>> = emptyList(),val earliest:LocalDate?=null)
 data class AgendaBlock(val taskId:String,val phaseId:String,val start:Long,val end:Long)
 data class AgendaDeficit(val taskId:String,val title:String,val minutes:Int)
-data class AgendaProposal(val blocks:List<AgendaBlock>,val deficits:List<AgendaDeficit>,val breaks:List<Interval> = emptyList())
+data class AgendaProposal(val blocks:List<AgendaBlock>,val deficits:List<AgendaDeficit>,val breaks:List<Interval> = emptyList(),val breakOwners:Map<Interval,String> = emptyMap()) {
+    fun sessions(includeBreaks:Boolean=true):List<Session> = blocks.map{Session(taskId=it.taskId,phaseId=it.phaseId,start=it.start,end=it.end)}+(if(includeBreaks)breaks.mapNotNull{p->breakOwners[p]?.let{Session(taskId=it,start=p.start,end=p.end,isBreak=true)}}else emptyList())
+}
 object AgendaPlanner {
     /** Earliest deadline first, with explicit per-task availability and pair-specific overlap permissions. */
     fun plan(input:List<AgendaInput>,start:LocalDate,end:LocalDate,days:Set<DayOfWeek>,from:LocalTime,until:LocalTime,maxSession:Int,busy:List<Interval>,zone:ZoneId=ZoneId.systemDefault(),minStart:Long=System.currentTimeMillis(),existing:List<Session> = emptyList(),tasks:List<Task> = emptyList()):AgendaProposal {
         require(end>=start && end<=start.plusDays(366) && days.isNotEmpty() && maxSession in 1..1440)
-        val occupied=existing.toMutableList();val blocks=mutableListOf<AgendaBlock>();val deficits=mutableListOf<AgendaDeficit>();val breaks=mutableListOf<Interval>()
+        val occupied=existing.toMutableList();val blocks=mutableListOf<AgendaBlock>();val deficits=mutableListOf<AgendaDeficit>();val breaks=mutableListOf<Interval>();val breakOwners=mutableMapOf<Interval,String>()
         for(t in input.sortedWith(compareBy<AgendaInput>{it.deadline}.thenByDescending{it.priority}.thenBy{it.taskId})){
             if(t.minutes<=0)continue
             val task=tasks.find{it.id==t.taskId}?:Task(id=t.taskId,title=t.title)
@@ -34,14 +36,14 @@ object AgendaPlanner {
                 val own=occupied.filter{it.taskId==t.taskId}
                 val result=SmartPlan.propose(task,own,hardBusy,first,limit,allowed,earliestTime,latestTime,minOf(maxSession,h.sessionLimit.coerceIn(1,1440)),n,h.dailyMinutes,zone,cursor,spread=parts.size==1&&!h.compact,breakMinutes=h.breakMinutes)
                 result.intervals.forEach{b->blocks+=AgendaBlock(t.taskId,id,b.start,b.end);occupied+=Session(taskId=t.taskId,phaseId=id,start=b.start,end=b.end)}
-                breaks+=result.breaks
+                breaks+=result.breaks;result.breaks.forEach{breakOwners[it]=t.taskId}
                 val tail=result.intervals.lastOrNull()
                 cursor=tail?.end?:cursor
-                if(tail!=null&&id!=parts.last().first&&result.missingMinutes==0){val pause=PlanningPreferences.recovery(((tail.end-tail.start)/60000).toInt(),h.breakMinutes)*60000L;val endPause=cursor+pause;if(pause>0){if(Planner.windows(first,limit,allowed,earliestTime,latestTime,zone).any{it.start<=cursor&&it.end>=endPause}&&hardBusy.none{it.start<endPause&&cursor<it.end})breaks+=Interval(cursor,endPause);cursor=endPause}}
+                if(tail!=null&&id!=parts.last().first&&result.missingMinutes==0){val pause=PlanningPreferences.recovery(((tail.end-tail.start)/60000).toInt(),h.breakMinutes)*60000L;val endPause=cursor+pause;if(pause>0){if(Planner.windows(first,limit,allowed,earliestTime,latestTime,zone).any{it.start<=cursor&&it.end>=endPause}&&hardBusy.none{it.start<endPause&&cursor<it.end}){val rest=Interval(cursor,endPause);breaks+=rest;breakOwners[rest]=t.taskId};cursor=endPause}}
                 totalMissing+=result.missingMinutes
             }
             if(totalMissing>0)deficits+=AgendaDeficit(t.taskId,t.title,totalMissing)
         }
-        return AgendaProposal(blocks.sortedBy{it.start},deficits,breaks.sortedBy{it.start})
+        return AgendaProposal(blocks.sortedBy{it.start},deficits,breaks.sortedBy{it.start},breakOwners)
     }
 }

@@ -29,7 +29,7 @@ object PlanningPreferences {
         val from=runCatching{LocalTime.parse(h.windowStart)}.getOrNull()
         val until=runCatching{LocalTime.parse(h.windowEnd)}.getOrNull()
         val valid=from!=null&&until!=null&&from!=until
-        return h.copy(dailyMinutes=h.dailyMinutes.coerceIn(0,1440),excludedWeekdays=h.excludedWeekdays.filter{it in 1..7}.distinct(),availableWeekdays=h.availableWeekdays.filter{it in 1..7}.distinct(),daysPerWeek=h.daysPerWeek.coerceIn(0,7),minutesPerTopic=h.minutesPerTopic.coerceIn(0,100000),topicCount=h.topicCount.coerceIn(0,200),suggestedMinutes=h.suggestedMinutes.coerceIn(0,100000),windowStart=if(valid)from.toString()else "",windowEnd=if(valid)until.toString()else "",sessionLimit=h.sessionLimit.coerceIn(15,480),breakMinutes=h.breakMinutes.coerceIn(0,60),explanation=h.explanation.take(500))
+        return h.copy(dailyMinutes=h.dailyMinutes.coerceIn(0,1440),excludedWeekdays=h.excludedWeekdays.filter{it in 1..7}.distinct(),availableWeekdays=h.availableWeekdays.filter{it in 1..7}.distinct(),daysPerWeek=h.daysPerWeek.coerceIn(0,7),minutesPerTopic=h.minutesPerTopic.coerceIn(0,100000),topicCount=h.topicCount.coerceIn(0,200),suggestedMinutes=h.suggestedMinutes.coerceIn(0,100000),windowStart=if(valid)from.toString()else "",windowEnd=if(valid)until.toString()else "",sessionLimit=h.sessionLimit.coerceIn(15,480),breakMinutes=h.breakMinutes.coerceIn(0,60),explanation=h.explanation.take(500),breakReason=h.breakReason.take(500))
     }
     /** Explicit user text outranks an AI interpretation; keep AI fields absent from deterministic hints. */
     fun merge(ai:PlanHints,local:PlanHints,text:String):PlanHints {
