@@ -13,7 +13,6 @@ class CaptureTest {
         compose.onAllNodesWithText("Archivo").assertCountEquals(0)
         compose.onNode(hasSetTextAction()).performTextInput("Llamar al dentista mañana")
         compose.onNodeWithText("Organizar",substring=false).performClick()
-        compose.onNodeWithText("Tu propuesta").assertIsDisplayed()
-        compose.onNodeWithText("Guardar tarea").assertIsDisplayed()
+        compose.onNodeWithText("Conecta tu cuenta").assertIsDisplayed()
     }
 }

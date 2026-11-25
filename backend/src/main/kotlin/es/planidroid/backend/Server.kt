@@ -4,6 +4,7 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.cloud.FirestoreClient
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -65,7 +66,7 @@ fun main() {
     val key = System.getenv("GEMINI_API_KEY")?.takeIf { it.isNotBlank() } ?: error("Configure GEMINI_API_KEY")
     val model = System.getenv("GEMINI_MODEL")?.takeIf { Regex("gemini-[a-zA-Z0-9.-]+").matches(it) } ?: error("Configure GEMINI_MODEL")
     val allowed = System.getenv("PLANIDROID_ALLOWED_UIDS").orEmpty().split(',').map(String::trim).filter(String::isNotEmpty).toSet()
-    require(allowed.isNotEmpty()) { "Configure PLANIDROID_ALLOWED_UIDS" }
+    // Optional secondary allowlist. Firestore approval is mandatory regardless.
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     require(port in 1..65535)
     val options = FirebaseOptions.builder().setCredentials(GoogleCredentials.getApplicationDefault()).apply {
@@ -73,6 +74,7 @@ fun main() {
     }.build()
     FirebaseApp.initializeApp(options)
     val auth = FirebaseAuth.getInstance()
+    val approvals = FirestoreClient.getFirestore().collection("approvedUsers")
     val quota = RateLimiter()
     val gemini = GeminiClient(key, model)
     val server = HttpServer.create(InetSocketAddress("0.0.0.0", port), 32)
@@ -85,7 +87,7 @@ fun main() {
             val token = exchange.requestHeaders.getFirst("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() && it.length <= 8192 }
             if (token == null) { exchange.error(401, "Authentication required"); return@createContext }
             val uid = try { auth.verifyIdToken(token, true).uid } catch (_: Exception) { exchange.error(401, "Invalid token"); return@createContext }
-            if (uid !in allowed) { exchange.error(403, "Not allowed"); return@createContext }
+            if (allowed.isNotEmpty() && uid !in allowed) { exchange.error(403, "Not allowed"); return@createContext }
             val bytes = exchange.requestBody.use { it.readNBytes(MAX_REQUEST + 1) }
             if (bytes.size > MAX_REQUEST) { exchange.error(413, "Too large"); return@createContext }
             val input = try { JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject } catch (_: Exception) { exchange.error(400, "Invalid JSON"); return@createContext }
@@ -93,6 +95,8 @@ fun main() {
             val text = input.string("text")
             if (operation == null || operation !in operations || text == null || text.isBlank() || text.length > 16_000) { exchange.error(400, "Invalid request"); return@createContext }
             if (!quota.allow(uid)) { exchange.error(429, "Hourly limit"); return@createContext }
+            val approved = try { approvals.document(uid).get().get(5, TimeUnit.SECONDS).getBoolean("enabled") == true } catch (_: Exception) { exchange.error(503, "Approval unavailable"); return@createContext }
+            if (!approved) { exchange.error(403, "Not approved"); return@createContext }
             val result = try { gemini.generate(operation, text) } catch (_: Exception) { exchange.error(502, "Provider unavailable or invalid response"); return@createContext }
             exchange.reply(200, result)
         } catch (_: Exception) {
