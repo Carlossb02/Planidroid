@@ -11,6 +11,7 @@ import java.time.*
 import java.util.concurrent.TimeUnit
 
 object Reminders {
+    fun cancel(context:Context,scope:String,id:String)=WorkManager.getInstance(context).cancelUniqueWork("reminder-$scope-$id")
     fun update(context: Context,scope: String,t: Task) {
         val wm=WorkManager.getInstance(context); val key="reminder-$scope-${t.id}"
         if(!t.reminder || t.due.isBlank() || t.status in listOf(Status.DONE,Status.ARCHIVED)) { wm.cancelUniqueWork(key); return }

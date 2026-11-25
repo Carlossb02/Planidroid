@@ -20,7 +20,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** One entry point: text, preview, save. No attachment or camera controls. */
-@Composable fun Capture(uid:String, save:(List<Task>)->Unit, plan:(Task)->Unit, manual:()->Unit = {}) {
+@Composable fun Capture(uid:String, save:(List<Task>)->Unit, plan:(Task)->Unit, manual:()->Unit = {},availability:String="") {
     val context=LocalContext.current
     val online=LocalOnlineAccess.current
     val coroutine=rememberCoroutineScope()
@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
         busy=true; error=""
         coroutine.launch {
             try {
-                val tasks=AiConfig.provider(context,uid).parseNaturalLanguage("Fecha actual: "+java.time.LocalDate.now()+"\n"+request).tasks
+                val tasks=AiConfig.provider(context,uid).parseNaturalLanguage(request.take(6000)+"\nAgenda ocupada (referencia, no cambiar): "+availability.take(5000)).tasks
                 check(tasks.isNotEmpty()){"Gemini no devolvió tareas. Añade más información."}
                 draft=tasks.map { t -> t.copy(id=newId(),planHints=PlanningPreferences.merge(t.planHints,SmartCapture.hints(if(tasks.size==1)request else t.description,t.due,java.time.LocalDate.now()),if(tasks.size==1)request else t.description)) }
             } catch(e:CancellationException) { throw e }
@@ -72,6 +72,8 @@ import kotlinx.coroutines.launch
                             if(task.planHints.daysPerWeek>0) Text("Disponibilidad: "+task.planHints.daysPerWeek+" días por semana",style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.minutesPerTopic>0) Text("Por tema: "+task.planHints.minutesPerTopic+" min",style=MaterialTheme.typography.bodySmall)
                             if(task.minutes==0&&task.planHints.explanation.isNotBlank()) Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
+                            if(task.planHints.breakMinutes>0)Text("Bloques de "+task.planHints.sessionLimit+" min · pausas de "+task.planHints.breakMinutes+" min",style=MaterialTheme.typography.bodySmall)
+                            if(task.planHints.breakReason.isNotBlank())Text(task.planHints.breakReason,style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.dailyMinutes>0) Text("Máximo diario: "+task.planHints.dailyMinutes+" min",style=MaterialTheme.typography.bodySmall)
                             task.phases.take(8).forEach{Text("• ${it.title}",style=MaterialTheme.typography.bodyMedium)}
                             TextButton(onClick={details=!details}){Text(if(details)"Ocultar detalles" else "Ajustar detalles")}
@@ -94,5 +96,5 @@ import kotlinx.coroutines.launch
         }
     }
     if(connect)PersonalGeminiDialog(uid){connect=false}
-    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviará solo el texto que acabas de escribir directamente a Gemini con tu clave personal.")},confirmButton={TextButton(onClick={consent=false;interpret()}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false}){Text("Cancelar")}})
+    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviarán tu petición y los intervalos ocupados relevantes, sin títulos de citas, a Gemini con tu clave personal. La propuesta incluye fases, horarios y descansos.")},confirmButton={TextButton(onClick={consent=false;interpret()}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false}){Text("Cancelar")}})
 }

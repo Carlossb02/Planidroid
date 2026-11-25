@@ -3,7 +3,7 @@ import kotlinx.serialization.Serializable
 import java.time.*
 import java.text.Normalizer
 
-@Serializable data class PlanHints(val dailyMinutes:Int=0,val excludedWeekdays:List<Int> = emptyList(),val suggestedMinutes:Int=0,val explanation:String="",val daysPerWeek:Int=0,val availableWeekdays:List<Int> = emptyList(),val minutesPerTopic:Int=0,val topicCount:Int=0,val finishBeforeDeadline:Boolean=false,val windowStart:String="",val windowEnd:String="",val sessionLimit:Int=120,val breakMinutes:Int=10,val compact:Boolean=true)
+@Serializable data class PlanHints(val dailyMinutes:Int=0,val excludedWeekdays:List<Int> = emptyList(),val suggestedMinutes:Int=0,val explanation:String="",val daysPerWeek:Int=0,val availableWeekdays:List<Int> = emptyList(),val minutesPerTopic:Int=0,val topicCount:Int=0,val finishBeforeDeadline:Boolean=false,val windowStart:String="",val windowEnd:String="",val sessionLimit:Int=120,val breakMinutes:Int=0,val compact:Boolean=true,val breakReason:String="")
 
 object SmartCapture {
     private fun normalize(s:String)=Normalizer.normalize(s.lowercase(),Normalizer.Form.NFD).replace(Regex("\\p{M}+"),"")
@@ -43,7 +43,7 @@ object SmartPlan {
         val busy=existing.map{Interval(it.start,it.end)}+external
         val blocks=mutableListOf<Interval>();val breaks=mutableListOf<Interval>()
         fun allocate(window:Interval,wanted:Int){
-            val used=(existing.filter{it.taskId==task.id}.map{Interval(it.start,it.end)}+blocks).sumOf{((minOf(it.end,window.end)-maxOf(it.start,window.start)).coerceAtLeast(0)/60000).toInt()}
+            val used=(existing.filter{it.taskId==task.id&&!it.isBreak}.map{Interval(it.start,it.end)}+blocks).sumOf{((minOf(it.end,window.end)-maxOf(it.start,window.start)).coerceAtLeast(0)/60000).toInt()}
             val cap=if(dailyLimit>0)(dailyLimit-used).coerceAtLeast(0)else remaining
             val target=minOf(remaining,wanted,cap)
             if(target>0){

@@ -32,7 +32,6 @@ import kotlinx.coroutines.CancellationException
     val approval by model.approval.collectAsStateWithLifecycle()
     val calendar by remember(uid){ServiceHealth.observe(ctx,uid,"calendar")}.collectAsStateWithLifecycle(initialValue=false)
     val gemini by remember(uid){ServiceHealth.observe(ctx,uid,"gemini")}.collectAsStateWithLifecycle(initialValue=false)
-    var dbOk by remember(uid){mutableStateOf(false)}
     var calendarOpen by remember(uid){mutableStateOf(false)}
     var logout by remember(uid){mutableStateOf(false)}
     var geminiOpen by remember(uid){mutableStateOf(false)}
@@ -42,27 +41,21 @@ import kotlinx.coroutines.CancellationException
     val health by remember(uid){ServiceHealth.observe(ctx,uid,"firestore")}.collectAsStateWithLifecycle(initialValue=false)
     val sync by model.syncState.collectAsStateWithLifecycle()
     val pending by model.pendingCount.collectAsStateWithLifecycle()
-    LaunchedEffect(uid,approval){
-        dbOk=false
-        if(approval==true)try{Cloud.verifyDatabase(ctx,uid);dbOk=true}catch(e:CancellationException){throw e}catch(_:Exception){}
-    }
-    LaunchedEffect(sync){if(sync=="Sincronizado")dbOk=true else if(sync=="Error o conflicto"||sync=="Pendiente de autorización")dbOk=false}
-    LaunchedEffect(uid){if(uid!="local")CalendarSync.verifyConnection(ctx,uid)}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
         GlassCard{
             Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Autorizado · sin conexión"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
             if(uid=="local")Button(enabled=!busy,onClick={online("conectar tu cuenta")}){Text("Iniciar sesión con Google")}
             else TextButton(onClick={logout=true}){Text("Cerrar sesión")}
         }
-        GlassCard{
+        GlassCard(tint=Blue){
             Text("Servicios",style=MaterialTheme.typography.titleLarge)
             ServiceRow("Google",uid!="local")
             HorizontalDivider()
-            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(pending>0)"$pending cambios pendientes" else if(approval==null)"Sin conexión / sin verificar" else "Pulsa para sincronizar"){if(uid=="local")online("sincronizar")else syncOpen=true}
+            ServiceRow("Sincronización",uid!="local"&&approval==true&&health,if(pending>0)"$pending cambios pendientes" else if(approval==null)"Sin conexión / sin verificar" else if(health)"Última sincronización correcta" else "Sin sincronización reciente"){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
-            ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
+            ServiceRow("Google Calendar",uid!="local"&&calendar,if(calendar)"Última comprobación correcta" else "Conectar o comprobar"){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()
-            ServiceRow("Gemini",uid!="local"&&keyConfigured&&gemini,if(keyConfigured)"Clave personal · pulsa para gestionar" else "Opcional · conectar clave personal"){geminiOpen=true}
+            ServiceRow("Gemini",uid!="local"&&keyConfigured&&gemini,if(keyConfigured)if(gemini)"Última consulta correcta" else "Clave guardada · sin verificar" else "Opcional · conectar clave personal"){geminiOpen=true}
         }
     }
     if(geminiOpen)PersonalGeminiDialog(uid,{geminiOpen=false;keyConfigured=AiConfig.configured(ctx,uid)})
