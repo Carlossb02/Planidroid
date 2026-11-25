@@ -38,13 +38,13 @@ import es.planidroid.app.domain.*
 }
 @Composable fun ProductGlyph(name:String,modifier:Modifier=Modifier){
     val type=productType(name)
-    if(type in listOf(ProductType.YOGURT,ProductType.CHEESE,ProductType.MEAT,ProductType.VEGETABLES)){FoodOutline(type,modifier);return}
+    if(type in listOf(ProductType.YOGURT,ProductType.CHEESE,ProductType.MEAT,ProductType.VEGETABLES,ProductType.FRUIT)){FoodOutline(type,modifier);return}
     val icon=when(type){
         ProductType.DAIRY->Icons.Outlined.LocalDrink
         ProductType.YOGURT->Icons.Outlined.LocalDrink
         ProductType.CHEESE->Icons.Outlined.Restaurant
         ProductType.EGGS->Icons.Outlined.Egg
-        ProductType.FRUIT->Icons.Outlined.Apple
+        ProductType.FRUIT->Icons.Outlined.Spa
         ProductType.VEGETABLES->Icons.Outlined.Spa
         ProductType.MEAT->Icons.Outlined.RestaurantMenu
         ProductType.FISH->Icons.Outlined.SetMeal
@@ -81,6 +81,7 @@ import es.planidroid.app.domain.*
         fun oval(a:Float,b:Float,x:Float,y:Float)=drawOval(c,Offset(w*a,h*b),Size(w*x,h*y),style=stroke)
         fun poly(vararg xy:Float){val p=androidx.compose.ui.graphics.Path();p.moveTo(w*xy[0],h*xy[1]);for(i in 2 until xy.size step 2)p.lineTo(w*xy[i],h*xy[i+1]);p.close();drawPath(p,c,style=stroke)}
         when(type){
+            ProductType.FRUIT->{oval(.12f,.28f,.76f,.62f);line(.50f,.28f,.56f,.10f);oval(.56f,.09f,.27f,.14f)}
             ProductType.YOGURT->{poly(.19f,.29f,.81f,.29f,.69f,.88f,.31f,.88f);line(.13f,.22f,.87f,.22f);line(.60f,.19f,.80f,.06f)}
             ProductType.CHEESE->{poly(.10f,.50f,.62f,.13f,.91f,.49f,.91f,.82f,.10f,.82f);line(.10f,.50f,.91f,.49f);oval(.33f,.58f,.14f,.13f);oval(.66f,.62f,.12f,.12f)}
             ProductType.MEAT->{oval(.10f,.17f,.76f,.68f);oval(.25f,.30f,.37f,.32f);line(.66f,.33f,.77f,.55f)}
