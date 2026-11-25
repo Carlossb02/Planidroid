@@ -19,6 +19,12 @@ class ReleaseVersionTest {
         assertFalse(ReleaseVersion.newer("v0.1.0.0", "0.5.0.1"))
         assertEquals(listOf("Planidroid_v0.1.0.0.apk", "Planidroid.apk"), ReleaseVersion.apkNames("v0.1.0.0"))
     }
+    @Test fun apkMetadataMustMatch() {
+        assertNull(ReleaseVersion.validationError("v0.1.1.1","es.planidroid.app","es.planidroid.app","0.1.1.1",11,"0.1.1.0",10))
+        assertTrue(ReleaseVersion.validationError("0.1.0.1","es.planidroid.app","es.planidroid.app","0.1.1.0",10,"0.1.0.0",9)!!.contains("distinta"))
+        assertTrue(ReleaseVersion.validationError("0.1.1.1","es.planidroid.app","es.planidroid.app","0.1.1.1",10,"0.1.0.0",10)!!.contains("versionCode"))
+        assertTrue(ReleaseVersion.validationError("0.1.1.1","es.organiza.app","es.planidroid.app","0.1.1.1",11,"0.1.0.0",9)!!.contains("Paquete incorrecto"))
+    }
     @Test fun stableTags() {
         assertTrue(ReleaseVersion.newer("v0.10.0", "0.9.9"))
         assertFalse(ReleaseVersion.newer("v0.4.0", "0.4.0"))
