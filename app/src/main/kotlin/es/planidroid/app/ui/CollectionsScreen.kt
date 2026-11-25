@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -100,25 +101,26 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     val legacy=ShoppingList(id="legacy-shopping",name="Mi compra")
     val local=lists+if(lists.isEmpty()||shopping.any{it.listId.isBlank()}||history.any{it.listId.isBlank()})listOf(legacy)else emptyList()
     val shared=access.spaces.filter{it.kind=="shopping_list"}
-    var selected by remember(uid){mutableStateOf<ShoppingList?>(null)}
-    var remote by remember(uid){mutableStateOf<String?>(null)}
+    var selectedId by rememberSaveable(uid){mutableStateOf<String?>(null)}
+    val selected=local.find{it.id==selectedId}
+    var remote by rememberSaveable(uid){mutableStateOf<String?>(null)}
     var create by remember{mutableStateOf(false)}
     var publish by remember{mutableStateOf<ShoppingList?>(null)}
     var invite by remember{mutableStateOf<String?>(null)}
     val currentRemote=shared.find{it.id==remote}
     fun key(l:ShoppingList)=if(l.id==legacy.id)"" else l.id
-    SectionBack(selected!=null||remote!=null){selected=null;remote=null}
+    SectionBack(selectedId!=null||remote!=null){selectedId=null;remote=null}
     if(currentRemote!=null){
         SharedShoppingDetail(currentRemote,access,{remote=null},{invite=currentRemote.id})
     }else if(selected!=null){
         val l=selected!!
-        ShoppingScreen(shopping.filter{it.listId==key(l)},history.filter{it.listId==key(l)},inventory,model,key(l),l.name,{selected=null},{if(uid=="local")online("compartir esta lista")else publish=l})
+        ShoppingScreen(shopping.filter{it.listId==key(l)},history.filter{it.listId==key(l)},inventory,model,key(l),l.name,{selectedId=null},{if(uid=="local")online("compartir esta lista")else publish=l})
     }else{
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
             Row(verticalAlignment=Alignment.CenterVertically){Text("Tus listas",Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);FilledIconButton(onClick={create=true}){Icon(Icons.Outlined.Add,"Crear lista")}}
             local.filter{l->shared.none{it.role=="owner"&&it.sourceId==l.id}}.forEach{l->
                 val count=shopping.count{it.listId==key(l)&&ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0}
-                CollectionTile(l.name,count.toString()+" pendientes",false,{selected=l}){Icon(Icons.Outlined.ShoppingBasket,null)}
+                CollectionTile(l.name,count.toString()+" pendientes",false,{selectedId=l.id}){Icon(Icons.Outlined.ShoppingBasket,null)}
             }
             shared.filter{it.role=="owner"}.forEach{s->CollectionTile(s.title,"Propia · en la nube",false,{remote=s.id}){Icon(Icons.Outlined.ShoppingBasket,null)}}
             OnlineCollections(access,uid)
@@ -126,7 +128,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         }
     }
     if(create)CollectionNameDialog("Nueva lista",{create=false},{model.save(ShoppingList(name=it))})
-    publish?.let{l->Confirm("Compartir esta lista","Se creará una lista colaborativa con los productos actuales, sin enlaces a tu inventario privado. La copia local se conserva como recuperación; en adelante edita la versión compartida. El historial previo permanece privado.",{publish=null},{access.work{api->val s=api.publishShopping(l,shopping.filter{it.listId==key(l)});selected=null;remote=s.id;invite=s.id}})}
+    publish?.let{l->Confirm("Compartir esta lista","Se creará una lista colaborativa con los productos actuales, sin enlaces a tu inventario privado. La copia local se conserva como recuperación; en adelante edita la versión compartida. El historial previo permanece privado.",{publish=null},{access.work{api->val s=api.publishShopping(l,shopping.filter{it.listId==key(l)});selectedId=null;remote=s.id;invite=s.id}})}
     invite?.let{id->shared.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
 
@@ -188,13 +190,13 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         houses.filter{h->none{it.cloud?.id==h.id}}.forEach{h->add(HouseCard("cloud:"+h.id,h.title,null,h,remoteFurniture.filter{it.parentId==h.id},h.role=="owner"))}
         remoteFurniture.groupBy{it.parentId}.filterKeys{parent->none{it.cloud?.id==parent}}.forEach{(parent,children)->add(HouseCard("cloud:"+parent,children.first().homeName.ifBlank{"Hogar compartido"},null,null,children,false))}
     }
-    var selected by remember(uid){mutableStateOf<String?>(null)}
-    var localId by remember(uid){mutableStateOf<String?>(null)}
+    var selected by rememberSaveable(uid){mutableStateOf<String?>(null)}
+    var localId by rememberSaveable(uid){mutableStateOf<String?>(null)}
     var remote by remember(uid){mutableStateOf<String?>(null)}
     var create by remember{mutableStateOf(false)}
     var createFurniture by remember{mutableStateOf(false)}
     var createLocalFurniture by remember{mutableStateOf(false)}
-    var query by remember(uid,selected){mutableStateOf("")}
+    var query by rememberSaveable(uid,selected){mutableStateOf("")}
     var publishHome by remember{mutableStateOf(false)}
     var publishFurniture by remember{mutableStateOf<Furniture?>(null)}
     var invite by remember{mutableStateOf<String?>(null)}
@@ -229,7 +231,8 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
                 val tiles=localFurniture.map{f->HouseFurnitureEntry("local:"+f.id,f,null,inventory.filter{it.furnitureId==f.id})}+current.children.mapNotNull{s->runCatching{decode<SharedFurniture>(s.body)}.getOrNull()?.let{HouseFurnitureEntry("remote:"+s.id,it.furniture,s,it.items)}}
                 val visible=tiles.filter{entry->query.isBlank()||listOf(entry.furniture.name,entry.furniture.room,entry.furniture.type.label).any{it.contains(query,true)}||entry.items.any{it.name.contains(query,true)}}
                 if(visible.isEmpty())Text(if(query.isBlank())"Todavía no hay muebles disponibles." else "No hay coincidencias.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                visible.groupBy{it.furniture.room.trim().ifBlank{"Sin estancia"}}.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach{(room,entries)->
+                visible.groupBy{InventoryConsumption.fold(it.furniture.room.ifBlank{"Sin estancia"})}.toSortedMap().forEach{(_,entries)->
+                    val room=entries.first().furniture.room.trim().ifBlank{"Sin estancia"}
                     Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Outlined.MeetingRoom,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(room,Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);Text(entries.size.toString(),style=MaterialTheme.typography.labelMedium)}
                     entries.sortedBy{it.furniture.name.lowercase()}.forEach{entry->
                         val m=entry.furniture;val shared=entry.shared
@@ -249,7 +252,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         }
     }
     if(create)CollectionNameDialog("Nuevo hogar",{create=false},{model.save(Home(name=it))})
-    if(createLocalFurniture&&current?.local!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=if(current.local.id==legacy.id)""else current.local.id),{createLocalFurniture=false},{f->model.save(f);createLocalFurniture=false;localId=f.id})
+    if(createLocalFurniture&&current?.local!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=if(current.local.id==legacy.id)""else current.local.id),{createLocalFurniture=false},{f->model.save(f);createLocalFurniture=false})
     if(createFurniture&&current?.cloud!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=current.cloud.sourceId),{createFurniture=false},{f->access.work{it.addFurniture(requireNotNull(current.cloud),f)};createFurniture=false})
     if(publishHome&&current?.local!=null)Confirm("Compartir hogar","Se publicarán todos los muebles y su contenido de este hogar, sin fotografías privadas. Los originales locales se conservan como recuperación. Quien acepte tendrá acceso a los muebles publicados y a los que añadas al hogar online.",{publishHome=false},{val h=current.local;val fs=furniture.filter{it.homeId==(if(h.id==legacy.id)""else h.id)};access.work{api->val s=api.publishHome(h,fs,inventory);invite=s.id}})
     publishFurniture?.let{f->if(current?.local!=null)Confirm("Compartir solo "+f.name,"Se publicará exclusivamente este mueble y su contenido, sin fotos locales. El destinatario verá el nombre del hogar, pero no otros muebles. El original local se conserva como recuperación.",{publishFurniture=null},{val h=current.local;access.work{api->val s=api.publishFurniture(h,f,inventory);localId=null;remote=s.id;invite=s.id}})}
