@@ -131,6 +131,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     var scan by remember(s.id){mutableStateOf(false)}
     var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
     var historyOpen by remember{mutableStateOf(false)}
+    var recipes by remember{mutableStateOf(false)}
     fun update(next:SharedShopping){access.work{it.update(s,s.title,encode(next))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
         TextButton(onClick=back){Text("‹ Listas")}
@@ -153,12 +154,14 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
                 }
             }
         }
+        if(write)OutlinedButton(onClick={recipes=true}){Icon(Icons.Outlined.AutoAwesome,null);Text(" Recetas con Gemini")}
         if(data.items.none{it.pending})Text("Todo al día",style=MaterialTheme.typography.titleMedium)
         TextButton(onClick={historyOpen=!historyOpen}){Text(if(historyOpen)"Ocultar historial" else "Historial de compras")}
         if(historyOpen)data.history.asReversed().forEach{p->
             Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(p.name);Text(sessionDate(p.boughtAt).toString(),style=MaterialTheme.typography.bodySmall)};if(write&&!p.undone)TextButton(enabled=!access.busy,onClick={val old=data.items.find{it.id==p.shoppingId};val next=if(old!=null)data.items.map{if(it.id==old.id)it.copy(pending=true)else it}else data.items+Shopping(name=p.name,quantity=p.quantity,unit=p.unit,quantitySpecified=p.quantitySpecified,icon=p.icon);update(data.copy(items=next,history=data.history.map{if(it.id==p.id)it.copy(undone=true)else it}))}){Text("Deshacer")}}
         }
     }
+    if(recipes)RecipeSuggestions(Cloud.auth(LocalContext.current)?.currentUser?.uid?:"local",data.items.filter{it.pending}.map{it.name},"",{recipes=false},{update(data.copy(items=data.items+it))})
     if(scan)ShoppingScan("",{scan=false},{update(data.copy(items=data.items+it));scan=false})
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=data.items.map{if(it.id==p.id)next.copy(itemId="")else it}));editing=null})}
 }

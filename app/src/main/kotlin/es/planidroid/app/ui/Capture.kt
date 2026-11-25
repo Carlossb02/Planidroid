@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
     var submitted by remember { mutableStateOf(false) }
     var consent by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var connect by remember{mutableStateOf(false)}
     fun interpret() {
         val request=input.trim()
         busy=true; error=""
@@ -50,10 +51,10 @@ import kotlinx.coroutines.launch
                     Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
                     Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
                     OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),placeholder={Text("Preparar el examen del 20 de diciembre, dedicar 8 horas y repasar los temas…")},shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
-                    Button(onClick={if(uid=="local")online("organizar con Gemini")else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
+                    Button(onClick={if(!AiConfig.configured(context,uid))connect=true else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-                    TextButton(onClick=manual,enabled=!busy){Text("Crear tarea manualmente")}
+                    OutlinedButton(onClick=manual,enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Crear tarea o recordatorio manualmente")}
                     Text("Puedes escribir una tarea o varias, una por línea. No se guarda nada sin tu confirmación.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Section("Tu propuesta","Revisa y ajusta lo necesario.")
@@ -91,5 +92,6 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviará solo el texto que acabas de escribir a Gemini a través del servidor seguro.")},confirmButton={TextButton(onClick={consent=false;interpret()}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false}){Text("Cancelar")}})
+    if(connect)PersonalGeminiDialog(uid){connect=false}
+    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviará solo el texto que acabas de escribir directamente a Gemini con tu clave personal.")},confirmButton={TextButton(onClick={consent=false;interpret()}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false}){Text("Cancelar")}})
 }
