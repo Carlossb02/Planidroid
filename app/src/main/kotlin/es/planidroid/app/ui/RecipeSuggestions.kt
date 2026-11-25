@@ -20,7 +20,7 @@ internal suspend fun shoppingPhotoBytes(ctx:Context,uri:Uri):ByteArray=withConte
     val options=BitmapFactory.Options().apply{inJustDecodeBounds=true}
     ctx.contentResolver.openInputStream(uri)?.use{BitmapFactory.decodeStream(it,null,options)}
     require(options.outWidth>0&&options.outHeight>0)
-    var sample=1;while(maxOf(options.outWidth,options.outHeight)/sample>1600)sample*=2
+    var sample=1;while(maxOf(options.outWidth,options.outHeight)/sample>1280)sample*=2
     val bitmap=ctx.contentResolver.openInputStream(uri)?.use{BitmapFactory.decodeStream(it,null,BitmapFactory.Options().apply{inSampleSize=sample})}?:error("Imagen inválida")
     try{ByteArrayOutputStream().use{out->bitmap.compress(Bitmap.CompressFormat.JPEG,75,out);out.toByteArray().also{require(it.size<=2_000_000)}}}finally{bitmap.recycle()}
 }

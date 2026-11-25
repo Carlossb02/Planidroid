@@ -90,26 +90,14 @@ import kotlinx.coroutines.launch
     }
     val ctx=LocalContext.current;val coroutine=rememberCoroutineScope()
     var keepBreaks by remember{mutableStateOf(true)}
-    var restConsent by remember{mutableStateOf(false)}
     var aiBusy by remember{mutableStateOf(false)};var aiConsent by remember{mutableStateOf(false)};var connect by remember{mutableStateOf(false)}
-    fun suggestBreaks(){
-        aiBusy=true
-        coroutine.launch{try{
-            val current=draftTask.copy(attachments=emptyList(),contact="",phone="")
-            val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).restAdvice(encode(current),AgendaContext.build(allTasks,kept,external,today,last?:today.plusDays(7),setOf(task.id)).take(9000))
-            val focus=response.getInt("focusMinutes");val rest=response.getInt("breakMinutes")
-            require(focus in 15..240&&rest in 0..60)
-            max=focus.toString();pause=rest.toString();hints=hints.copy(breakReason=response.getString("reason").take(500));keepBreaks=true
-            feedback="Gemini ha sugerido la duración de los bloques y descansos. Revisa el resultado."
-        }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){feedback=e.localizedMessage?:"Gemini no disponible"}finally{aiBusy=false}}
-    }
     fun reviseWithGemini(){
-        val request=revision.trim();if(request.isBlank())return
+        val request=revision.trim()
         aiBusy=true
         coroutine.launch{
             try{
                 val current=draftTask.copy(attachments=emptyList(),contact="",phone="")
-                val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).parseNaturalLanguage("Modifica solo las preferencias indicadas. Conserva el resto. Tarea actual: "+encode(current)+"\nCambio solicitado: "+request).tasks.singleOrNull()?:error("Gemini no devolvió una tarea")
+                val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).planWithContext(current,request.ifBlank{"Optimiza bloques y descansos conservando mis preferencias"},AgendaContext.availability(kept,external,today,last?:today.plusDays(7))).tasks.singleOrNull()?:error("Gemini no devolvió una tarea")
                 val merged=PlanningPreferences.merge(response.planHints,SmartCapture.hints(request,deadline,today),request)
                 val window=PlanningPreferences.explicitWindow(request)
                 if(window!=null||merged.windowStart.isNotBlank()){from=window?.first?:merged.windowStart;until=window?.second?:merged.windowEnd}
@@ -154,9 +142,8 @@ import kotlinx.coroutines.launch
                         }
                         Field(revision,{revision=it.take(300)},"Cambiar con texto")
                         OutlinedButton(onClick={applyRevision()},enabled=revision.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Recalcular")}
-                        TextButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else restConsent=true}){Text("Sugerir descansos con Gemini")}
                         if(hints.breakReason.isNotBlank())Text(hints.breakReason,style=MaterialTheme.typography.bodySmall)
-                        TextButton(enabled=revision.isNotBlank()&&!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true}){Text(if(aiBusy)"Consultando…" else "Ajustar con Gemini")}
+                        TextButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true}){Text(if(aiBusy)"Consultando…" else "Optimizar con Gemini")}
                         if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
                         Text("Horario propuesto: "+from+" – "+until,style=MaterialTheme.typography.labelMedium)
                         TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar ajustes" else "Ajustar horario y duración")}
@@ -209,6 +196,5 @@ import kotlinx.coroutines.launch
         }
     }
     if(connect)PersonalGeminiDialog(uid){connect=false}
-    if(restConsent)Confirm("Descansos con Gemini","Se enviará esta tarea sin adjuntos ni contactos y una vista de la disponibilidad de la agenda (sin títulos de citas externas).",{restConsent=false},{suggestBreaks()})
-    if(aiConsent)Confirm("Revisar con Gemini","Se enviarán los datos de esta tarea sin adjuntos ni contactos y el cambio solicitado.",{aiConsent=false},{reviseWithGemini()})
+    if(aiConsent)Confirm("Revisar con Gemini","Se enviarán los datos necesarios de esta tarea y los intervalos ocupados para ajustar en una sola consulta fases, horarios y descansos.",{aiConsent=false},{reviseWithGemini()})
 }

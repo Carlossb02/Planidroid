@@ -44,6 +44,7 @@ object AgendaPlanner {
             }
             if(totalMissing>0)deficits+=AgendaDeficit(t.taskId,t.title,totalMissing)
         }
-        return AgendaProposal(blocks.sortedBy{it.start},deficits,breaks.sortedBy{it.start},breakOwners)
+        val safeBreaks=breaks.distinct().filter{p->existing.none{s->s.start<p.end&&s.end>p.start}&&blocks.none{s->s.start<p.end&&s.end>p.start}&&busy.none{s->s.start<p.end&&s.end>p.start}}.sortedBy{it.start}
+        return AgendaProposal(blocks.sortedBy{it.start},deficits,safeBreaks,breakOwners.filterKeys{it in safeBreaks})
     }
 }

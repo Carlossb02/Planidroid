@@ -39,8 +39,8 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
     val selected=sessions.find{it.id==selectedId}
     val taskMap=remember(tasks){tasks.associateBy{it.id}}
     val events=remember(sessions,tasks,external){
-        sessions.filter{it.end>it.start&&taskMap.containsKey(it.taskId)}.map{s->val t=taskMap[s.taskId];AgendaEvent("s:"+s.id,s.start,s.end,if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title.orEmpty()},s,t)}
-        +external.filter{it.end>it.start}.map{AgendaEvent("e:"+it.id,it.start,it.end,it.title,external=it)}
+        val local=sessions.filter{it.end>it.start&&taskMap.containsKey(it.taskId)}.map{s->val t=taskMap[s.taskId];AgendaEvent("s:"+s.id,s.start,s.end,if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title.orEmpty()},s,t)}
+        local+external.filter{it.end>it.start}.map{AgendaEvent("e:"+it.id,it.start,it.end,it.title,external=it)}
     }
     val week=date.minusDays((date.dayOfWeek.value-1).toLong())
     val zone=ZoneId.systemDefault()
