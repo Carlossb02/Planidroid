@@ -6,7 +6,7 @@ import java.util.UUID
 
 fun newId() = UUID.randomUUID().toString()
 val codec = Json { ignoreUnknownKeys = false; encodeDefaults = true }
-@Serializable enum class Kind { TASK, SESSION, FURNITURE, ITEM, GROUP, SHOPPING, PURCHASE, HOME, SHOPPING_LIST }
+@Serializable enum class Kind { TASK, SESSION, FURNITURE, ITEM, GROUP, SHOPPING, PURCHASE, HOME, SHOPPING_LIST, RECIPE }
 @Serializable enum class Category(val label: String) { INBOX("Bandeja"), DEADLINE("Con fecha límite"), SOON("Próximamente"), SOMEDAY("Sin fecha") }
 @Serializable enum class Status(val label: String) { PENDING("Pendiente"), ACTIVE("En curso"), BLOCKED("Bloqueada"), DONE("Completada"), ARCHIVED("Archivada") }
 @Serializable enum class Priority(val label: String) { NONE("Sin prioridad"), LOW("Baja"), NORMAL("Normal"), HIGH("Alta"), URGENT("Urgente") }
@@ -19,7 +19,7 @@ val codec = Json { ignoreUnknownKeys = false; encodeDefaults = true }
 @Serializable data class Session(val id: String = newId(), val taskId: String, val start: Long, val end: Long, val done: Boolean = false, val phaseId: String = "", val calendarTitle: String = "", val isBreak:Boolean=false)
 @Serializable enum class FurnitureType(val label: String) { FRIDGE("Nevera"), FREEZER("Congelador"), WARDROBE("Armario"), DRAWER("Cajonera"), PANTRY("Despensa"), SHELF("Estantería"), CABINET("Mueble"), BOX("Caja"), WASHER("Lavadora"), OTHER("Otro") }
 @Serializable data class Furniture(val id: String = newId(), val name: String, val type: FurnitureType, val room: String = "", val compartments: List<String> = listOf("General"), val notes: String = "", val zones: List<Zone> = emptyList(), val photo: String = "", val homeId:String="")
-@Serializable data class Item(val id: String = newId(), val furnitureId: String, val name: String, val compartment: String = "General", val quantity: String = "1", val expiry: String = "", val notes: String = "", val amount: Double = 1.0, val unit: String = "ud", val icon: String = "📦", val photo: String = "")
+@Serializable data class Item(val id: String = newId(), val furnitureId: String, val name: String, val compartment: String = "General", val quantity: String = "1", val expiry: String = "", val notes: String = "", val amount: Double = 1.0, val unit: String = "ud", val icon: String = "📦", val photo: String = "",val contentKind:InventoryKind=InventoryKind.AUTO,val restockAmount:Double=0.0)
 @Serializable data class Group(val id: String = newId(), val name: String, val description: String = "")
 @Serializable data class Entry(val id: String, val kind: Kind, val payload: String)
 @Serializable data class Backup(val schemaVersion: Int = 1, val exportDate: String, val appVersion: String = "unknown", val entries: List<Entry>, val theme: String = "Sistema", val glass: Boolean = false)

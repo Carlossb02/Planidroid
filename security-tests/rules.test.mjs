@@ -95,3 +95,5 @@ test('approved account may check absent shared id for idempotent publication, no
  await assertSucceeds(getDoc(doc(a,'sharedSpaces','not-created-yet')));
  await assertFails(getDoc(doc(b,'sharedSpaces','space1')));
 });
+
+test('recipe book follows the same private authorization and version rules',async()=>{const a=user('A'),b=user('B'),x=user('UNAPPROVED');const data={kind:'RECIPE',payload:'{}',deleted:false,version:1,updatedAt:serverTimestamp()};await assertSucceeds(setDoc(doc(a,'users/A/records/recipe-test'),data));await assertFails(getDoc(doc(b,'users/A/records/recipe-test')));await assertFails(setDoc(doc(x,'users/UNAPPROVED/records/recipe-test'),data));await assertSucceeds(setDoc(doc(a,'users/A/records/recipe-test'),{...data,version:2,deleted:true,updatedAt:serverTimestamp()}))});
