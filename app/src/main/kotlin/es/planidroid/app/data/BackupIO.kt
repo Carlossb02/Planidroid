@@ -15,7 +15,7 @@ object BackupIO {
         for (e in b.entries) {
             require(e.id.matches(Regex("[A-Za-z0-9_-]{1,100}")) && e.payload.length < 200000)
             when(e.kind) {
-                Kind.TASK -> decode<Task>(e.payload).let { require(it.id==e.id && it.title.isNotBlank() && it.minutes in 0..100000); if(it.due.isNotBlank()) LocalDate.parse(it.due); require(it.groupId.isEmpty() || types[it.groupId]==Kind.GROUP);require(it.dependencies.all{d->types[d]==Kind.TASK});require(it.reminderBeforeDays in 0..30);java.time.LocalTime.parse(it.reminderTime);if(it.startDate.isNotBlank())LocalDate.parse(it.startDate) }
+                Kind.TASK -> decode<Task>(e.payload).let { require(it.id==e.id && it.title.isNotBlank() && it.minutes in 0..100000); if(it.due.isNotBlank()) LocalDate.parse(it.due); require(it.groupId.isEmpty() || types[it.groupId]==Kind.GROUP);require(it.dependencies.all{d->types[d]==Kind.TASK});require(it.overlapWith.all{d->types[d]==Kind.TASK&&d!=it.id});require(it.reminderBeforeDays in 0..30);java.time.LocalTime.parse(it.reminderTime);if(it.startDate.isNotBlank())LocalDate.parse(it.startDate) }
                 Kind.SESSION -> decode<Session>(e.payload).let { require(it.id==e.id && it.end>it.start && types[it.taskId]==Kind.TASK) }
                 Kind.HOME -> decode<Home>(e.payload).let { require(it.id==e.id && it.name.isNotBlank()) }
                 Kind.SHOPPING_LIST -> decode<ShoppingList>(e.payload).let { require(it.id==e.id && it.name.isNotBlank()) }
@@ -35,7 +35,7 @@ object BackupIO {
         return b.entries.map { e ->
             val id=map.getValue(e.id)
             val payload=when(e.kind) {
-                Kind.TASK -> encode(decode<Task>(e.payload).let { it.copy(id=id,groupId=map[it.groupId].orEmpty(), attachments=it.attachments.map{a->a.copy(uri=if(keepFiles)a.uri else "")},dependencies=it.dependencies.mapNotNull{d->map[d]},seriesId="") })
+                Kind.TASK -> encode(decode<Task>(e.payload).let { it.copy(id=id,groupId=map[it.groupId].orEmpty(), attachments=it.attachments.map{a->a.copy(uri=if(keepFiles)a.uri else "")},dependencies=it.dependencies.mapNotNull{d->map[d]},overlapWith=it.overlapWith.mapNotNull{d->map[d]},seriesId="") })
                 Kind.SESSION -> encode(decode<Session>(e.payload).let { it.copy(id=id,taskId=map.getValue(it.taskId)) })
                 Kind.HOME -> encode(decode<Home>(e.payload).copy(id=id))
                 Kind.SHOPPING_LIST -> encode(decode<ShoppingList>(e.payload).copy(id=id))

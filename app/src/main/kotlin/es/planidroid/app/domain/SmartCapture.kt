@@ -35,7 +35,7 @@ object SmartCapture {
     }
 }
 object SmartPlan {
-    fun propose(task:Task,existing:List<Session>,external:List<Interval>,start:LocalDate,deadline:LocalDate,days:Set<DayOfWeek>,from:LocalTime,until:LocalTime,maxSession:Int,minutes:Int,dailyLimit:Int=0,zone:ZoneId=ZoneId.systemDefault(),now:Long=System.currentTimeMillis()):PlanResult {
+    fun propose(task:Task,existing:List<Session>,external:List<Interval>,start:LocalDate,deadline:LocalDate,days:Set<DayOfWeek>,from:LocalTime,until:LocalTime,maxSession:Int,minutes:Int,dailyLimit:Int=0,zone:ZoneId=ZoneId.systemDefault(),now:Long=System.currentTimeMillis(),spread:Boolean=true):PlanResult {
         require(minutes in 1..100000 && deadline>=start && deadline<=start.plusDays(366) && days.isNotEmpty() && until>from && maxSession in 1..1440 && dailyLimit in 0..1440)
         val available=(0..java.time.temporal.ChronoUnit.DAYS.between(start,deadline)).map{start.plusDays(it)}.filter{it.dayOfWeek in days}
         var remaining=minutes
@@ -47,7 +47,7 @@ object SmartPlan {
             val target=minOf(remaining,wanted,cap)
             if(target>0){val r=Planner.plan(PlanRequest(target,date,date,days,from,until,maxSession,busy+blocks,zone,now));blocks+=r.intervals;remaining-=target-r.missingMinutes}
         }
-        available.forEachIndexed{index,date->if(remaining>0){val fair=(remaining+available.size-index-1)/(available.size-index);allocate(date,maxOf(fair,minOf(30,remaining)))}}
+        if(spread)available.forEachIndexed{index,date->if(remaining>0){val fair=(remaining+available.size-index-1)/(available.size-index);allocate(date,maxOf(fair,minOf(30,remaining)))}}
         for(date in available){if(remaining==0)break;allocate(date,remaining)}
         return PlanResult(blocks.sortedBy{it.start},remaining)
     }
