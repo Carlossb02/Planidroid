@@ -15,7 +15,7 @@ object OverlapPolicy {
         for(i in future.indices)for(j in i+1 until future.size){
             val a=future[i];val b=future[j]
             if(b.start>=a.end)break
-            if(allowed(a.taskId,b.taskId,before)&&conflict(a,b,after))return true
+            if(!a.isBreak&&!b.isBreak&&allowed(a.taskId,b.taskId,before)&&conflict(a,b,after))return true
         }
         return false
     }

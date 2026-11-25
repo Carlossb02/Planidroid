@@ -125,7 +125,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 item{
-                    Button(enabled=picked.isNotEmpty()&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={
+                    Button(enabled=picked.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={
                         runCatching{
                             val selected=eligible.filter{it.id in picked}.map(::candidate)
                             require(selected.all{it.minutes in 1..100000}){"Indica una duración o el número de temas de cada tarea seleccionada."}
@@ -161,7 +161,7 @@ import kotlinx.coroutines.launch
                         if(p.blocks.any{other->other.taskId!=b.taskId&&other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)}||kept.any{other->other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)})Text("Solapamiento autorizado",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
                     }}
                     if(p.breaks.isNotEmpty())item{GlassCard(tint=Mint){Text("Descansos sugeridos",style=MaterialTheme.typography.titleMedium);p.breaks.take(50).forEach{Text(sessionDate(it.start).toString()+" · "+time(it.start)+" – "+time(it.end))}}}
-                    item{Button(enabled=p.blocks.isNotEmpty()&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates)}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
+                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates)}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
                 }
                 item{TextButton(onClick=close){Text("Cancelar")}}
             }

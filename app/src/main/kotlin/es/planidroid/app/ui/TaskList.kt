@@ -15,13 +15,15 @@ import es.planidroid.app.domain.*
 
 @Composable fun TaskList(tasks:List<Task>,edit:(Task)->Unit,add:()->Unit,delete:(Task)->Unit){
     var query by remember{mutableStateOf("")};var filter by remember{mutableStateOf("Pendientes")}
+    var filtersOpen by remember{mutableStateOf(false)}
     var remove by remember{mutableStateOf<Task?>(null)}
-    val shown=tasks.filter{t->(query.isBlank()||listOf(t.title,t.description,t.tags.joinToString()).any{it.contains(query,true)})&&when(filter){"Pendientes"->t.status !in listOf(Status.DONE,Status.ARCHIVED);"Completadas"->t.status==Status.DONE;"Archivadas"->t.status==Status.ARCHIVED;else->true}}.sortedWith(compareBy<Task>{it.due.ifBlank{"9999"}}.thenByDescending{it.priority.ordinal})
+    val shown=tasks.filter{t->(query.isBlank()||listOf(t.title,t.description,t.tags.joinToString()).any{it.contains(query,true)})&&when(filter){"Pendientes"->t.status !in listOf(Status.DONE,Status.ARCHIVED);"Completadas"->t.status==Status.DONE;"Archivadas"->t.status==Status.ARCHIVED;"Atrasadas"->t.status !in listOf(Status.DONE,Status.ARCHIVED)&&t.due.isNotBlank()&&t.due<java.time.LocalDate.now().toString();"Todas"->true;else->t.category.label==filter&&t.status!=Status.ARCHIVED}}.sortedWith(compareBy<Task>{it.due.ifBlank{"9999"}}.thenByDescending{it.priority.ordinal})
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
         item{
             Row(verticalAlignment=Alignment.CenterVertically){Text("Mis tareas",Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall);FilledTonalIconButton(onClick=add){Icon(Icons.Default.Add,"Añadir tarea")}}
             OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),singleLine=true,leadingIcon={Icon(Icons.Default.Search,null)},placeholder={Text("Buscar")},shape=RoundedCornerShape(18.dp))
-            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Pendientes","Completadas","Todas","Archivadas").forEach{v->FilterChip(filter==v,{filter=v},label={Text(v)})}}
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Pendientes","Completadas","Todas").forEach{v->FilterChip(filter==v,{filter=v},label={Text(v)})};Box{IconButton(onClick={filtersOpen=true}){Icon(Icons.Default.FilterList,"Más filtros")};DropdownMenu(filtersOpen,{filtersOpen=false}){(listOf("Archivadas","Atrasadas")+Category.entries.map{it.label}).forEach{v->DropdownMenuItem(text={Text(v)},onClick={filter=v;filtersOpen=false})}}}}
+            if(filter !in listOf("Pendientes","Completadas","Todas"))Text(filter,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
             if(shown.isEmpty())Text("No hay tareas en esta vista.",color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(vertical=12.dp))
         }
         items(shown,key={it.id}){t->

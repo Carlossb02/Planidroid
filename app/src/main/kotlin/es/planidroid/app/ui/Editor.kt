@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
     val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&!it.isBreak&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
     val otherReserved=kept.filter{it.taskId==task.id&&!it.isBreak&&!it.done}.sumOf{((it.end-it.start)/60000).toInt()}
     var hints by remember(task.id){mutableStateOf(task.planHints)}
+    var plannedPhases by remember(task.id){mutableStateOf(task.phases)}
     var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
     var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
     var from by remember(task.id){mutableStateOf(hints.windowStart.ifBlank{"09:00"})}
@@ -65,7 +66,7 @@ import kotlinx.coroutines.launch
     val total=if(hints.minutesPerTopic>0)count?.let{runCatching{StudyIntent.studyMinutes(hints,it)}.getOrNull()} else minutesText.toIntOrNull()?.takeIf{it in 1..100000}?.let{(it.toLong()+doneMinutes+otherReserved).takeIf{n->n<=100000}?.toInt()}
     val remaining=total?.let{(it-doneMinutes-otherReserved).coerceAtLeast(0)}
     val last=runCatching{LocalDate.parse(deadline).let{if(hints.finishBeforeDeadline)it.minusDays(1)else it}}.getOrNull()
-    val draftTask=task.copy(minutes=total?:task.minutes,due=deadline,startDate=start,category=Category.DEADLINE,planHints=hints.copy(windowStart=from,windowEnd=until,sessionLimit=max.toIntOrNull()?:120,breakMinutes=pause.toIntOrNull()?:0,compact=compact,dailyMinutes=daily.toIntOrNull()?:0,availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=emptyList(),topicCount=count?:hints.topicCount))
+    val draftTask=task.copy(phases=plannedPhases,minutes=total?:task.minutes,due=deadline,startDate=start,category=Category.DEADLINE,planHints=hints.copy(windowStart=from,windowEnd=until,sessionLimit=max.toIntOrNull()?:120,breakMinutes=pause.toIntOrNull()?:0,compact=compact,dailyMinutes=daily.toIntOrNull()?:0,availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=emptyList(),topicCount=count?:hints.topicCount))
     val result=remember(draftTask,kept,external,start,last,from,until,max,daily,pause,compact,remaining,days){
         if(last==null||remaining==null||remaining<=0)null
         else runCatching{
@@ -99,6 +100,8 @@ import kotlinx.coroutines.launch
                 val current=draftTask.copy(attachments=emptyList(),contact="",phone="")
                 val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).planWithContext(current,request.ifBlank{"Optimiza bloques y descansos conservando mis preferencias"},AgendaContext.availability(kept,external,today,last?:today.plusDays(7))).tasks.singleOrNull()?:error("Gemini no devolvió una tarea")
                 val merged=PlanningPreferences.merge(response.planHints,SmartCapture.hints(request,deadline,today),request)
+                if(plannedPhases.isEmpty()&&response.phases.isNotEmpty()&&kept.none{it.taskId==task.id&&!it.isBreak})plannedPhases=response.phases
+                if(hints.minutesPerTopic==0&&total==null&&response.minutes>0)minutesText=response.minutes.toString()
                 val window=PlanningPreferences.explicitWindow(request)
                 if(window!=null||merged.windowStart.isNotBlank()){from=window?.first?:merged.windowStart;until=window?.second?:merged.windowEnd}
                 if(merged.availableWeekdays.isNotEmpty()||merged.daysPerWeek>0){days=StudyIntent.availableDays(merged)}
@@ -184,7 +187,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 item{
-                    Button(enabled=!approved&&result?.blocks?.isNotEmpty()==true&&total!=null,onClick={
+                    Button(enabled=!aiBusy&&!approved&&result?.blocks?.isNotEmpty()==true&&total!=null,onClick={
                         val r=result?:return@Button;val effort=total?:return@Button
                         approved=true
                         val updated=draftTask.copy(minutes=effort)

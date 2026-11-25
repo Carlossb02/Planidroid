@@ -151,7 +151,7 @@ object Cloud {
             }
             if(kind==Kind.FURNITURE.name && old!=null) payload=encode(decode<Furniture>(payload).copy(photo=decode<Furniture>(old.payload).photo))
             if(kind==Kind.ITEM.name && old!=null) payload=encode(decode<Item>(payload).copy(photo=decode<Item>(old.payload).photo))
-            dao.acceptRemote(Record(uid,snap.id,kind,payload,snap.getBoolean("deleted") ?: false,false,version,(old?.revision ?: 0)+1));if(kind==Kind.TASK.name&&snap.getBoolean("deleted")!=true)runCatching{Reminders.update(context,uid,decode<Task>(payload))}
+            dao.acceptRemote(Record(uid,snap.id,kind,payload,snap.getBoolean("deleted") ?: false,false,version,(old?.revision ?: 0)+1));if(kind==Kind.TASK.name)runCatching{if(snap.getBoolean("deleted")==true)Reminders.cancel(context,uid,snap.id)else Reminders.update(context,uid,decode<Task>(payload))}
         }
         newest?.let{p.edit().putLong("cursorSeconds",it.seconds).putInt("cursorNanos",it.nanoseconds).commit()}
         SessionReminders.refresh(context,uid)

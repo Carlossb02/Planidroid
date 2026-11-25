@@ -52,7 +52,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
 @Composable private fun PrivateScreen(model: PlanidroidModel) {
     val theme by model.theme.collectAsStateWithLifecycle(); val glass by model.glass.collectAsStateWithLifecycle()
     val scope by model.scope.collectAsStateWithLifecycle(); val all by model.rows.collectAsStateWithLifecycle(); val message by model.message.collectAsStateWithLifecycle()
-    val rows=all.filter { it.scope==scope };val ext by model.external.collectAsStateWithLifecycle();val external=if(ext.first==scope)ext.second else emptyList();val blocked=external.filter{it.busy}.map{Interval(it.start,it.end)}
+    val rows=all.filter { it.scope==scope };val ext by model.external.collectAsStateWithLifecycle();val external=if(ext.first==scope)ext.second else emptyList();val blocked=remember(external){external.filter{it.busy}.map{Interval(it.start,it.end)}}
     val tasks=remember(rows){ rows.filter{it.kind==Kind.TASK.name}.mapNotNull { runCatching{decode<Task>(it.payload)}.getOrNull() } }
     val sessions=remember(rows){ rows.filter{it.kind==Kind.SESSION.name}.mapNotNull { runCatching{decode<Session>(it.payload)}.getOrNull() } }
     val furniture=remember(rows){ rows.filter{it.kind==Kind.FURNITURE.name}.mapNotNull { runCatching{decode<Furniture>(it.payload)}.getOrNull() } }
@@ -62,6 +62,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val groups=remember(rows){ rows.filter{it.kind==Kind.GROUP.name}.mapNotNull { runCatching{decode<Group>(it.payload)}.getOrNull() } }
     val shopping=remember(rows){rows.filter{it.kind==Kind.SHOPPING.name}.mapNotNull{runCatching{decode<Shopping>(it.payload)}.getOrNull()}}
     val purchases=remember(rows){rows.filter{it.kind==Kind.PURCHASE.name}.mapNotNull{runCatching{decode<Purchase>(it.payload)}.getOrNull()}}
+    val compactAvailability=remember(sessions,blocked){AgendaContext.availability(sessions,blocked,LocalDate.now(),LocalDate.now().plusDays(30))}
     var tab by remember(scope){mutableStateOf(Tab.HOME)}; var edit by remember(scope){mutableStateOf<Task?>(null)}; var plan by remember(scope){mutableStateOf<Task?>(null)}
     var manualEvent by remember(scope){mutableStateOf<java.time.LocalDate?>(null)};var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};var agendaDraft by remember(scope){mutableStateOf<Task?>(null)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
@@ -76,7 +77,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.FOCUS->FocusScreen(tasks){id,min->model.logFocus(id,min)}
                 Tab.TASKS->TaskList(tasks,{edit=it},{tab=Tab.CAPTURE},{model.delete(it.id,Kind.TASK)})
                 Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},{agendaDraft=null;agendaPlan=true},external,{manualEvent=it})
-                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS},{edit=Task(title="")},AgendaContext.availability(sessions,blocked,LocalDate.now(),LocalDate.now().plusDays(30)))
+                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS},{edit=Task(title="")},compactAvailability)
                 Tab.ASSISTANT->AssistantScreen(scope,tasks,{model.saveTasks(it)},{plan=it;tab=Tab.CALENDAR},AgendaContext.availability(sessions,blocked,LocalDate.now(),LocalDate.now().plusDays(30)))
                 Tab.SPACES->Column(Modifier.fillMaxSize()){Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={tab=Tab.INVENTORY},modifier=Modifier.weight(1f)){Icon(Icons.Default.Home,null);Text(" Hogar")};OutlinedButton(onClick={tab=Tab.SHOPPING},modifier=Modifier.weight(1f)){Icon(Icons.Default.ShoppingCart,null);Text(" Compra")}};TextButton(onClick={if(scope=="local")onlineFeature="ver tus espacios compartidos" else tab=Tab.SHARED},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.People,null);Text(" Compartido")};TextButton(onClick={tab=Tab.ASSISTANT},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.AutoAwesome,null);Text(" Asistente")};TextButton(onClick={tab=Tab.TOOLS},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.Settings,null);Text(" Herramientas")};Spaces(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it})}
                 Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)

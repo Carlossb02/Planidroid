@@ -19,16 +19,16 @@ import java.time.format.DateTimeFormatter
 @Composable fun Home(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,capture:()->Unit,inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,spaces:()->Unit,count:Int,buyCount:Int,saveSession:(Session)->Unit,focus:()->Unit,external:List<ExternalEvent> = emptyList(),assistant:()->Unit={}){
     val today=LocalDate.now();val now=System.currentTimeMillis()
     val todaySessions=sessions.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today}.sortedBy{it.start}
+    val day=TimelineLayout.bounds(today,ZoneId.systemDefault())
     val work=todaySessions.filterNot{it.isBreak};val done=work.count{it.done}
     val active=tasks.filter{it.status !in listOf(Status.DONE,Status.ARCHIVED)}
     val next=(todaySessions.filter{!it.done&&it.end>now}.map{CalendarEntry(it.start,it.end,it,null)}+external.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today&&it.end>now}.map{CalendarEntry(it.start,it.end,null,it)}).sortedBy{it.start}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
         item{
             Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",java.util.Locale("es","ES"))).replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Tu día",style=MaterialTheme.typography.headlineLarge)
             Surface(color=soft(Blue,.12f),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth().clickable(onClick=calendar)){
                 Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                    Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(if(work.isEmpty())"Agenda despejada" else "$done de "+work.size+" sesiones",style=MaterialTheme.typography.titleLarge);Text(work.filterNot{it.done}.sumOf{(it.end-it.start)/60000}.toString()+" min de actividad pendientes",style=MaterialTheme.typography.bodySmall)};Icon(Icons.Default.ChevronRight,"Abrir calendario")}
+                    Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(if(work.isEmpty())"Agenda despejada" else "$done de "+work.size+" sesiones",style=MaterialTheme.typography.titleLarge);Text(work.filterNot{it.done}.sumOf{(minOf(it.end,day.end)-maxOf(it.start,day.start))/60000}.toString()+" min de actividad pendientes",style=MaterialTheme.typography.bodySmall)};Icon(Icons.Default.ChevronRight,"Abrir calendario")}
                     if(work.isNotEmpty())LinearProgressIndicator(progress={done.toFloat()/work.size},modifier=Modifier.fillMaxWidth())
                 }
             }

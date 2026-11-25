@@ -62,6 +62,8 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
             OutlinedButton(onClick={addEvent(date)},modifier=Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" Evento")}
             FilledTonalButton(onClick=plan,modifier=Modifier.weight(1f)){Icon(Icons.Default.AutoAwesome,null);Text(" Planificar")}
         }
+        val due=tasks.filter{it.due==date.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+        if(due.isNotEmpty()){var openDue by remember(date){mutableStateOf(false)};TextButton(onClick={openDue=true}){Text(due.size.toString()+" vencimientos · "+dayLabel(date))};if(openDue)AlertDialog(onDismissRequest={openDue=false},title={Text("Vencimientos")},text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){due.forEach{t->TextButton(onClick={openDue=false;edit(t)}){Text(t.title)}}}},confirmButton={TextButton(onClick={openDue=false}){Text("Cerrar")}})}
         when(mode){
             "Mes"->Column(Modifier.weight(1f).verticalScroll(rememberScrollState())){
                 val first=date.withDayOfMonth(1);val offset=first.dayOfWeek.value-1
@@ -73,9 +75,10 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
                             if(n in 1..date.lengthOfMonth()){
                                 val d=first.withDayOfMonth(n);val bounds=TimelineLayout.bounds(d,zone)
                                 val visible=events.filter{it.start<bounds.end&&it.end>bounds.start}
+                                val deadline=tasks.any{it.due==d.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
                                 Surface(Modifier.fillMaxSize().clickable{choose(d)},shape=RoundedCornerShape(10.dp),color=if(d==date)soft(Blue,.20f)else MaterialTheme.colorScheme.surface){
                                     Column(Modifier.padding(5.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
-                                        Text(n.toString(),style=MaterialTheme.typography.labelLarge)
+                                        Text(n.toString()+(if(deadline)" •" else ""),style=MaterialTheme.typography.labelLarge)
                                         visible.take(3).forEach{e->Box(Modifier.fillMaxWidth().height(5.dp).background(if(e.session?.isBreak==true)MaterialTheme.colorScheme.outline else if(e.external!=null)Lilac else taskColor(e.task),RoundedCornerShape(3.dp)))}
                                         if(visible.size>3)Text("+"+(visible.size-3),style=MaterialTheme.typography.labelSmall)
                                     }
