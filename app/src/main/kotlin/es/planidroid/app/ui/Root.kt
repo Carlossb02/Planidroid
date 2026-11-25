@@ -63,7 +63,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.FOCUS->FocusScreen(tasks){id,min->model.logFocus(id,min)}
                 Tab.TASKS->TaskList(tasks,{edit=it},{tab=Tab.CAPTURE})
                 Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},{agendaPlan=true},external)
-                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->model.save(created);plan=created;tab=Tab.TASKS})
+                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS})
                 Tab.ASSISTANT->AssistantScreen(scope,tasks){model.saveTasks(it)}
                 Tab.SPACES->Column(Modifier.fillMaxSize()){Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={tab=Tab.INVENTORY},modifier=Modifier.weight(1f)){Icon(Icons.Default.Home,null);Text(" Hogar")};OutlinedButton(onClick={tab=Tab.SHOPPING},modifier=Modifier.weight(1f)){Icon(Icons.Default.ShoppingCart,null);Text(" Compra")}};TextButton(onClick={if(scope=="local")onlineFeature="ver tus espacios compartidos" else tab=Tab.SHARED},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.People,null);Text(" Compartido")};TextButton(onClick={tab=Tab.ASSISTANT},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.AutoAwesome,null);Text(" Asistente")};Spaces(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it})}
                 Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)
@@ -72,9 +72,9 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.SETTINGS->SettingsScreen(model,scope,theme,glass)
             }}
         }
-        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null},{model.delete(task.id,Kind.TASK);edit=null},{t->model.save(t);edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId=""));edit=null},tasks) }
+        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId=""));edit=null},tasks) }
         if(agendaPlan)AgendaEditor(tasks,sessions,{agendaPlan=false},{new,old->model.commitPlan(new,old);agendaPlan=false;tab=Tab.CALENDAR},blocked)
-        plan?.let { t -> PlanDialog(t,sessions,{plan=null},{blocks->model.commitPlan(blocks,emptyList());plan=null;tab=Tab.CALENDAR},blocked) }
+        plan?.let { t -> PlanDialog(t,sessions,{plan=null},{updated,blocks->model.commitPlan(blocks,emptyList(),updated);plan=null;tab=Tab.CALENDAR},blocked) }
         }
         onlineFeature?.let{feature->OnlineSignInDialog(feature,model,scope){onlineFeature=null}}
     }

@@ -35,7 +35,7 @@ import java.time.*
     phaseEdit?.let{p->PhaseDetail(p,{phaseEdit=null},{v->t=t.copy(phases=t.phases.map{if(it.id==v.id)v else it});phaseEdit=null})}
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
-@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(List<Session>)->Unit,external:List<Interval> = emptyList()){
+@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>)->Unit,external:List<Interval> = emptyList()){
     val today=LocalDate.now()
     var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
     var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
@@ -73,7 +73,7 @@ import java.time.*
                     }
                 }
                 result?.intervals?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->item{Text(day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMM",java.util.Locale("es","ES"))),style=MaterialTheme.typography.titleMedium)};items(blocks.size){i->val s=blocks[i];GlassCard(tint=Blue){Text(time(s.start)+" – "+time(s.end),style=MaterialTheme.typography.titleMedium);Text(((s.end-s.start)/60000).toString()+" min")}}}
-                item{Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true,onClick={val r=result?:return@Button;approved=true;accept(r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)})},modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)"Añadir a mi agenda" else "Aceptar plan parcial")};TextButton(onClick=close){Text("Cancelar")}}
+                item{Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true,onClick={val r=result?:return@Button;approved=true;val already=existing.filter{it.taskId==task.id};val recorded=maxOf(task.actualMinutes,already.filter{it.done}.sumOf{((it.end-it.start)/60000).toInt()});val reserved=already.filterNot{it.done}.sumOf{((it.end-it.start)/60000).toInt()};val updated=task.copy(minutes=(minutes.toInt()+recorded+reserved).coerceAtMost(100000),due=deadline,category=Category.DEADLINE,startDate=start,planHints=task.planHints.copy(dailyMinutes=daily.ifBlank{"0"}.toInt(),excludedWeekdays=DayOfWeek.entries.filterNot{it in days}.map{it.value}));accept(updated,r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)})},modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)"Añadir a mi agenda" else "Aceptar plan parcial")};TextButton(onClick=close){Text("Cancelar")}}
             }
         }
     }

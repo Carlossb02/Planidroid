@@ -40,13 +40,14 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     fun save(f: Furniture) { val s=scope.value; run { dao.save(s,f.id,Kind.FURNITURE.name,encode(f)) } }
     fun save(i: Item) { val s=scope.value; run { dao.save(s,i.id,Kind.ITEM.name,encode(i)) } }
     fun save(g: Group) { val s=scope.value; run { dao.save(s,g.id,Kind.GROUP.name,encode(g)) } }
-    fun commitPlan(proposed:List<Session>,replacing:List<Session>){val uid=scope.value;run{db.withTransaction{
+    fun commitPlan(proposed:List<Session>,replacing:List<Session>,updatedTask:Task?=null){val uid=scope.value;run{db.withTransaction{
+        if(updatedTask!=null){require(updatedTask.title.isNotBlank()&&updatedTask.minutes in 1..100000);dao.save(uid,updatedTask.id,Kind.TASK.name,encode(updatedTask))}
         val rows=dao.all(uid).filterNot{it.deleted};val current=rows.filter{it.kind==Kind.SESSION.name}.map{decode<Session>(it.payload)};val tasks=rows.filter{it.kind==Kind.TASK.name}.map{decode<Task>(it.payload)}
         require(replacing.all{old->current.contains(old)&&!old.done&&old.start>System.currentTimeMillis()}){"El calendario ha cambiado; recalcula antes de aceptar"}
         val busy=current.filterNot{it in replacing}.map{Interval(it.start,it.end)}.toMutableList();busy+=es.planidroid.app.sync.CalendarSync.events(getApplication(),uid).filter{it.busy}.map{Interval(it.start,it.end)}
         for(s in proposed.sortedBy{it.start}){val t=tasks.find{it.id==s.taskId}?:error("La tarea ya no existe");require(TaskConstraints.unmet(t,tasks).isEmpty()&&t.status !in listOf(Status.DONE,Status.ARCHIVED,Status.BLOCKED));require(s.start>=System.currentTimeMillis()&&s.end>s.start&&busy.none{it.start<s.end&&it.end>s.start}){"Conflicto de horario; vuelve a calcular"};busy+=Interval(s.start,s.end)}
         replacing.forEach{dao.remove(uid,it.id)};proposed.forEach{dao.save(uid,it.id,Kind.SESSION.name,encode(it))}
-    };replacing.forEach{SessionReminders.cancel(getApplication(),uid,it.id)};proposed.forEach{SessionReminders.schedule(getApplication(),uid,it)};message.value="Plan guardado"}}
+    };updatedTask?.let{Reminders.update(getApplication(),uid,it)};replacing.forEach{SessionReminders.cancel(getApplication(),uid,it.id)};proposed.forEach{SessionReminders.schedule(getApplication(),uid,it)};message.value="Plan guardado"}}
     fun save(sessions: List<Session>) { val s=scope.value; run { db.withTransaction { sessions.forEach { v->val old=dao.get(s,v.id)?.takeUnless{it.deleted}?.let{decode<Session>(it.payload)};if(old==null||old.start!=v.start||old.end!=v.end){require(v.end>v.start&&dao.all(s).none{it.kind==Kind.SESSION.name&&!it.deleted&&it.id!=v.id&&decode<Session>(it.payload).let{r->r.start<v.end&&r.end>v.start}}&&es.planidroid.app.sync.CalendarSync.events(getApplication(),s).none{it.busy&&it.start<v.end&&it.end>v.start}){"Conflicto de horario"}};dao.save(s,v.id,Kind.SESSION.name,encode(v)) } };sessions.forEach{SessionReminders.schedule(getApplication(),s,it)} } }
     fun save(s: Shopping) { val uid=scope.value; run { dao.save(uid,s.id,Kind.SHOPPING.name,encode(s)) } }
     fun buy(id:String) { val uid=scope.value; run { db.withTransaction {
