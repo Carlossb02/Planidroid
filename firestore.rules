@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function valid() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['kind','payload','deleted','version','updatedAt']) &&
+        d.keys().hasOnly(['kind','payload','deleted','version','updatedAt']) &&
+        d.kind in ['TASK','SESSION','FURNITURE','ITEM','GROUP','SHOPPING','PURCHASE'] &&
+        d.payload is string && d.payload.size() <= 200000 && d.deleted is bool &&
+        d.version is int && d.version >= 1 && d.updatedAt == request.time;
+    }
+    match /users/{uid}/records/{id} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && valid() && request.resource.data.version == 1;
+      allow update: if owner(uid) && valid() && request.resource.data.version == resource.data.version + 1 && request.resource.data.kind == resource.data.kind;
+      allow delete: if false; // durable tombstones; no direct destructive delete
+    }
+    function signed() { return request.auth != null && request.auth.token.email_verified == true; }
+    function space(id) { return get(/databases/$(database)/documents/sharedSpaces/$(id)); }
+    function member(id) { return get(/databases/$(database)/documents/memberships/$(id + '~' + request.auth.token.email)); }
+    function isOwner(id) { return signed() && space(id).data.ownerUid == request.auth.uid; }
+    function role(id, roles) { return signed() && member(id).data.status == 'accepted' && member(id).data.acceptedUid == request.auth.uid && member(id).data.role in roles; }
+    function canRead(id) { return isOwner(id) || role(id,['reader','editor','admin']); }
+    function manager(id) { return isOwner(id) || role(id,['admin']); }
+    function writer(id) { return isOwner(id) || role(id,['editor','admin']); }
+    function validSpace() {
+      let d=request.resource.data;
+      return d.keys().hasOnly(['ownerUid','kind','title','body','version','updatedAt']) &&
+        d.kind in ['task','project','home','shopping'] && d.ownerUid is string && d.title is string && d.title.size()>0 && d.title.size()<=180 &&
+        d.body is string && d.body.size()<=50000 && d.version is int && d.updatedAt==request.time;
+    }
+    match /sharedSpaces/{id} {
+      allow get: if signed() && (resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']));
+      allow list: if signed() && resource.data.ownerUid==request.auth.uid;
+      allow create: if signed() && validSpace() && request.resource.data.ownerUid==request.auth.uid && request.resource.data.version==1;
+      allow update: if writer(id) && validSpace() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body','version','updatedAt']) && request.resource.data.version==resource.data.version+1;
+      allow delete: if false;
+      match /comments/{cid} {
+        allow read: if canRead(id);
+        allow create: if writer(id) && request.resource.data.keys().hasOnly(['authorUid','body','createdAt']) && request.resource.data.authorUid==request.auth.uid && request.resource.data.body is string && request.resource.data.body.size()>0 && request.resource.data.body.size()<=2000 && request.resource.data.createdAt==request.time;
+        allow update, delete: if false;
+      }
+    }
+    match /memberships/{mid} {
+      function validMembership() {
+        let d=request.resource.data;
+        return d.keys().hasOnly(['spaceId','email','role','status','invitedBy','acceptedUid','expiresAt','updatedAt']) && d.spaceId is string && d.email is string && d.email.size()<=254 && mid==d.spaceId+'~'+d.email && d.role in ['reader','editor','admin'] && d.status in ['pending','accepted','declined'] && d.acceptedUid is string && d.expiresAt is timestamp && d.updatedAt==request.time;
+      }
+      function inviteAllowed() { return manager(request.resource.data.spaceId) && (isOwner(request.resource.data.spaceId) || request.resource.data.role!='admin'); }
+      allow read: if signed() && (resource.data.email==request.auth.token.email || manager(resource.data.spaceId));
+      allow create: if signed() && validMembership() && inviteAllowed() && request.resource.data.invitedBy==request.auth.uid && request.resource.data.status=='pending' && request.resource.data.acceptedUid=='' && request.resource.data.expiresAt>request.time && request.resource.data.expiresAt<=request.time+duration.value(8,'d');
+      allow update: if signed() && validMembership() && (
+        (resource.data.email==request.auth.token.email && resource.data.status=='pending' && resource.data.expiresAt>request.time && ((request.resource.data.status=='accepted' && request.resource.data.acceptedUid==request.auth.uid) || (request.resource.data.status=='declined' && request.resource.data.acceptedUid=='')) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','acceptedUid','updatedAt'])) ||
+        (inviteAllowed() && (isOwner(resource.data.spaceId) || resource.data.role!='admin') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','status','invitedBy','acceptedUid','expiresAt','updatedAt']) && request.resource.data.invitedBy==request.auth.uid && request.resource.data.status=='pending' && request.resource.data.acceptedUid=='' && request.resource.data.expiresAt>request.time && request.resource.data.expiresAt<=request.time+duration.value(8,'d')));
+      allow delete: if signed() && (resource.data.email==request.auth.token.email || isOwner(resource.data.spaceId) || (role(resource.data.spaceId,['admin']) && resource.data.role!='admin'));
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

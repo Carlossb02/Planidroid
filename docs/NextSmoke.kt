@@ -1,0 +1,9 @@
+import es.planidroid.app.domain.*
+import java.time.*
+fun main(){
+val a=CalendarStamp(1,2,"A");val b=CalendarStamp(3,4,"A");val c=CalendarStamp(5,6,"A");check(CalendarMerge.decide(a,a,b)==Reconcile.PULL);check(CalendarMerge.decide(a,b,a)==Reconcile.PUSH);check(CalendarMerge.decide(a,b,c)==Reconcile.CONFLICT);check(CalendarMerge.decide(null,b,c)==Reconcile.CONFLICT);check(CalendarMerge.decide(null,b,b)==Reconcile.SAME);println("PASS Calendar: five reconciliation cases")
+val t=Task(title="T");val u=Task(title="U",dependencies=listOf(t.id));check(TaskConstraints.unmet(u,listOf(t,u))==listOf(t.id));check(TaskConstraints.unmet(u,listOf(t.copy(status=Status.DONE),u)).isEmpty());check(TaskConstraints.cycle(t.copy(dependencies=listOf(u.id)),listOf(t,u)));check(!TaskConstraints.cycle(t,listOf(t,u)));println("PASS dependencies: blocked, fulfilled, cycles")
+val d=LocalDate.of(2027,1,4);val r=AgendaPlanner.plan(listOf(AgendaInput("t","T",60,d.plusDays(1),0,earliest=d.plusDays(1))),d,d.plusDays(1),setOf(DayOfWeek.MONDAY,DayOfWeek.TUESDAY),LocalTime.of(9,0),LocalTime.of(10,0),60,emptyList(),ZoneOffset.UTC,0);check(r.blocks.size==1);check(Instant.ofEpochMilli(r.blocks[0].start).atZone(ZoneOffset.UTC).toLocalDate()==d.plusDays(1));println("PASS planning: earliest start date")
+val task=Task(title="T",minutes=120,actualMinutes=30);val sessions=listOf(Session(taskId=task.id,start=0,end=60*60000,done=true),Session(taskId=task.id,start=70*60000,end=100*60000));check(TaskConstraints.remaining(task,sessions)==30);println("PASS planning: remaining time")
+val repeat=Task(title="Repetir",due="2027-01-01",status=Status.DONE,recurrence=Recurrence.WEEKLY,checks=listOf(Check(title="x",done=true)));val next=RepeatingTasks.next(repeat)!!;check(next.due=="2027-01-08"&&next.id==RepeatingTasks.next(repeat)!!.id&&next.status==Status.PENDING&&!next.checks[0].done);println("PASS recurrence: stable next occurrence")
+}
