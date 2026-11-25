@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
     var from by remember{mutableStateOf("00:00")};var until by remember{mutableStateOf("00:00")}
     var max by remember{mutableStateOf("180")};var margin by remember{mutableStateOf("0")}
     var exceptions by remember{mutableStateOf("")};var advanced by remember{mutableStateOf(false)}
+    var aiOpen by remember{mutableStateOf(false)}
     var includeToday by remember{mutableStateOf(true)}
     var replan by remember{mutableStateOf(draft!=null)};var days by remember{mutableStateOf(DayOfWeek.entries.toSet())}
     var proposal by remember{mutableStateOf<AgendaProposal?>(null)};var replacing by remember{mutableStateOf(emptyList<Session>())}
@@ -66,7 +67,6 @@ import kotlinx.coroutines.launch
             LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 item{
                     Section("Organizar agenda")
-                    var aiOpen by remember{mutableStateOf(false)}
                     TextButton(onClick={aiOpen=!aiOpen}){Text(if(aiOpen)"Ocultar Gemini" else "✦ Optimizar con Gemini")}
                     if(aiOpen){Field(request,{request=it.take(1200)},"¿Qué quieres ajustar?",false)
                     OutlinedButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true},modifier=Modifier.fillMaxWidth()){Text(if(aiBusy)"Analizando calendario…" else "Consultar")}}

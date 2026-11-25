@@ -18,7 +18,7 @@ object LayoutGrid {
     fun zones(f:Furniture):List<Zone> = f.zones.ifEmpty { f.compartments.take(8).mapIndexed { i,n->Zone(n,y=i) } }
 }
 @Serializable data class Shopping(val id:String=newId(),val name:String,val quantity:Double=1.0,val unit:String="ud",val routine:Boolean=false,val pending:Boolean=true,val itemId:String="",val minimum:Double=0.0,val target:Double=1.0,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true,val referenceUrl:String="",val referenceTitle:String="")
-@Serializable data class Purchase(val id:String=newId(),val shoppingId:String,val name:String,val quantity:Double,val unit:String,val routine:Boolean,val boughtAt:Long=System.currentTimeMillis(),val itemId:String="",val stockBefore:Double?=null,val stockAfter:Double?=null,val undone:Boolean=false,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true)
+@Serializable data class Purchase(val id:String=newId(),val shoppingId:String,val name:String,val quantity:Double,val unit:String,val routine:Boolean,val boughtAt:Long=System.currentTimeMillis(),val itemId:String="",val stockBefore:Double?=null,val stockAfter:Double?=null,val undone:Boolean=false,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true,val referenceUrl:String="",val referenceTitle:String="")
 object ShoppingLogic {
     fun needed(s:Shopping,i:Item?):Double = if(s.routine && i!=null && i.amount<s.minimum) (s.target-i.amount).coerceAtLeast(0.0) else if(s.pending) s.quantity else 0.0
     fun canUndo(p:Purchase,i:Item?):Boolean = p.stockAfter!=null && p.stockBefore!=null && i!=null && abs(i.amount-p.stockAfter)<0.000001
