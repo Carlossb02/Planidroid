@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 private val Context.prefs by preferencesDataStore("appearance")
-class PlanidroidModel(app: Application): AndroidViewModel(app) {
+class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     private val db=PlanidroidDb.get(app); private val dao=db.records(); private val auth=Cloud.auth(app)
     private val _scope=MutableStateFlow(auth?.currentUser?.uid ?: "local"); val scope=_scope.asStateFlow()
     private val listener=com.google.firebase.auth.FirebaseAuth.AuthStateListener { _scope.value=it.currentUser?.uid ?: "local" }
@@ -30,6 +30,8 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class,kotlinx.coroutines.FlowPreview::class)
     private fun watchDirty(){viewModelScope.launch{scope.flatMapLatest{uid->if(uid=="local")flowOf(uid to emptyList<Record>())else dao.observeDirty(uid).map{uid to it}}.debounce(1500).collect{(uid,dirty)->if(dirty.isNotEmpty()&&Cloud.previouslyApproved(app,uid)){Cloud.dirtyChanged(app,uid)}}}}
     init { auth?.addAuthStateListener(listener);watchDirty() }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val pendingCount=scope.flatMapLatest{uid->if(uid=="local")flowOf(0)else dao.observeDirty(uid).map{it.size}}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0)
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val rows=scope.flatMapLatest { dao.observe(it) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

@@ -11,14 +11,16 @@ import androidx.compose.ui.unit.dp
 import es.planidroid.app.sync.*
 import es.planidroid.app.domain.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
 
 @Composable fun SharedScreen(uid:String){
     val online=LocalOnlineAccess.current;val ctx=LocalContext.current; val scope=rememberCoroutineScope(); val api=remember(uid){runCatching{SharedCloud(ctx)}.getOrNull()}
-    var spaces by remember(uid){mutableStateOf(emptyList<SharedSpace>())};var invites by remember(uid){mutableStateOf(emptyList<Membership>())};var current by remember(uid){mutableStateOf<SharedSpace?>(null)};var members by remember(uid){mutableStateOf(emptyList<Membership>())};var comments by remember(uid){mutableStateOf(emptyList<SharedComment>())};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var create by remember{mutableStateOf(false)}
-    suspend fun refresh(){val result=api!!.list();spaces=result.first.filter{it.kind in listOf("task","project","home","shopping")};invites=result.second;current=current?.let{old->spaces.find{it.id==old.id}};current?.let{s->comments=api.comments(s);members=if(s.role in listOf("owner","admin"))api.participants(s)else emptyList()}}
+    var spaces by remember(uid){mutableStateOf(api?.cached()?.first.orEmpty().filter{it.kind in listOf("task","project","home","shopping")})};var invites by remember(uid){mutableStateOf(api?.cached()?.second.orEmpty())};var current by remember(uid){mutableStateOf<SharedSpace?>(null)};var members by remember(uid){mutableStateOf(emptyList<Membership>())};var comments by remember(uid){mutableStateOf(emptyList<SharedComment>())};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var create by remember{mutableStateOf(false)}
+    suspend fun refresh(){val result=api!!.list();spaces=result.first.filter{it.kind in listOf("task","project","home","shopping")};invites=result.second;current=current?.let{old->spaces.find{it.id==old.id}};if(Cloud.networkAvailable(ctx))current?.let{s->comments=api.comments(s);members=if(s.role in listOf("owner","admin"))api.participants(s)else emptyList()}}
     fun work(action:suspend ()->Unit){if(api==null||busy)return;busy=true;scope.launch{try{error="";action();refresh()}catch(e:CancellationException){throw e}catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba la autorización de tu cuenta en Ajustes." else e.localizedMessage?:"Error de conexión"}catch(e:Exception){error=e.localizedMessage?:"Error de conexión"}finally{busy=false}}}
-    // Explicit refresh instead of reading every time this screen opens.
+    LaunchedEffect(uid){if(api?.needsRefresh()==true&&Cloud.networkAvailable(ctx))work{}}
+    LaunchedEffect(api){api?.observeCached()?.collect{r->spaces=r.first.filter{it.kind in listOf("task","project","home","shopping")};invites=r.second;current=current?.let{old->spaces.find{it.id==old.id}}}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Section("Compartido","Espacios explícitos, separados de tus tareas y calendario privados.")
         if(api==null){Text("Comparte solo lo que tú elijas.");Button(onClick={online("colaborar y acceder a contenido compartido")}){Text("Iniciar sesión")};return@Column}

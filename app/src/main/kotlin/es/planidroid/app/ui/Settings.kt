@@ -41,6 +41,7 @@ import kotlinx.coroutines.CancellationException
     var syncOpen by remember(uid){mutableStateOf(false)}
     val health by remember(uid){ServiceHealth.observe(ctx,uid,"firestore")}.collectAsStateWithLifecycle(initialValue=false)
     val sync by model.syncState.collectAsStateWithLifecycle()
+    val pending by model.pendingCount.collectAsStateWithLifecycle()
     LaunchedEffect(uid,approval){
         dbOk=false
         if(approval==true)try{Cloud.verifyDatabase(ctx,uid);dbOk=true}catch(e:CancellationException){throw e}catch(_:Exception){}
@@ -57,7 +58,7 @@ import kotlinx.coroutines.CancellationException
             Text("Servicios",style=MaterialTheme.typography.titleLarge)
             ServiceRow("Google",uid!="local")
             HorizontalDivider()
-            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(uid!="local")"Pulsa para sincronizar" else ""){if(uid=="local")online("sincronizar")else syncOpen=true}
+            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(pending>0)"$pending cambios pendientes" else "Pulsa para sincronizar"){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
             ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()

@@ -17,11 +17,12 @@ import es.planidroid.app.sync.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineScope){
-    var spaces by mutableStateOf(emptyList<SharedSpace>())
+    var spaces by mutableStateOf(api?.cached()?.first.orEmpty())
         private set
-    var invites by mutableStateOf(emptyList<Membership>())
+    var invites by mutableStateOf(api?.cached()?.second.orEmpty())
         private set
     var busy by mutableStateOf(false)
         private set
@@ -39,12 +40,14 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             finally{busy=false}
         }
     }
+    suspend fun observe(){api?.observeCached()?.collect{r->spaces=r.first;invites=r.second}}
     suspend fun refreshNow(){val r=api!!.list();spaces=r.first;invites=r.second}
 }
 @Composable private fun collectionAccess(uid:String):CollectionAccess{
     val ctx=LocalContext.current;val scope=rememberCoroutineScope()
     val state=remember(uid){CollectionAccess(if(uid=="local")null else runCatching{SharedCloud(ctx)}.getOrNull(),scope)}
-    // Load cloud collections only when the user explicitly requests them.
+    LaunchedEffect(state){state.observe()}
+    LaunchedEffect(state){if(state.api?.needsRefresh()==true&&Cloud.networkAvailable(ctx))state.work()}
     return state
 }
 @Composable private fun OnlineCollections(state:CollectionAccess,uid:String){
@@ -56,7 +59,9 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             Text("Compartido",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
             IconButton(onClick={state.work()},enabled=!state.busy){Icon(Icons.Outlined.Refresh,"Actualizar")}
         }
-        Text("Pulsa actualizar para consultar tus listas, hogares e invitaciones online.",style=MaterialTheme.typography.bodySmall)
+        val pending=state.api?.pendingEdits()?.size?:0
+        if(pending>0)Text("$pending cambios compartidos pendientes",style=MaterialTheme.typography.bodySmall)
+        if(!Cloud.networkAvailable(LocalContext.current))Text("Sin conexión · copia local",style=MaterialTheme.typography.bodySmall)
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(state.error.isNotBlank())Text(state.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
         state.invites.forEach{m->GlassCard(tint=Lilac){

@@ -41,6 +41,7 @@ object Cloud {
     }
     class ApprovalRequired : IllegalStateException("Tu cuenta está pendiente de autorización. Solicita al administrador que habilite tu UID.")
     private fun prefs(context:Context,uid:String)=context.getSharedPreferences("cloud-sync-$uid",Context.MODE_PRIVATE)
+    fun networkAvailable(context:Context):Boolean {val cm=context.getSystemService(android.net.ConnectivityManager::class.java);val network=cm.activeNetwork?:return false;return cm.getNetworkCapabilities(network)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)==true}
     fun previouslyApproved(context:Context,uid:String)=uid!="local"&&prefs(context,uid).getBoolean("verifiedAccess",false)
     fun recordApproval(context:Context,uid:String,enabled:Boolean){
         if(uid=="local")return
@@ -155,13 +156,15 @@ object Cloud {
         newest?.let{p.edit().putLong("cursorSeconds",it.seconds).putInt("cursorNanos",it.nanoseconds).commit()}
         SessionReminders.refresh(context,uid)
         prefs(context,uid).edit().putLong("lastSuccess",System.currentTimeMillis()).apply()
+        val shared=SharedCloud(context)
+        val sharedConflicts=shared.flushPending()
         ServiceHealth.mark(context,uid,"firestore",true)
-        check(conflicts == 0) { "$conflicts conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
+        check(conflicts == 0 && sharedConflicts==0) { "${conflicts+sharedConflicts} conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
     }
     fun schedule(context: Context, uid: String) {
         if(!automatic(context,uid)){stop(context,uid);return}
         val request = PeriodicWorkRequestBuilder<SyncWorker>(6,TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setInputData(workDataOf("uid" to uid)).build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork("sync-$uid",ExistingPeriodicWorkPolicy.KEEP,request)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork("sync-$uid",ExistingPeriodicWorkPolicy.UPDATE,request)
     }
 }
 class SyncWorker(context: Context, params: WorkerParameters): CoroutineWorker(context,params) {
