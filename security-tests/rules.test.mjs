@@ -65,3 +65,27 @@ test('approval is manual; unapproved and revoked users cannot read or write appl
  await assertFails(getDoc(doc(x,'sharedSpaces','space1')));
  await assertFails(setDoc(doc(a,'approvedUsers','X'),{enabled:true}));
 });
+
+test('Google user can register only own pending request, never overwrite or approve',async()=>{
+ const pending=env.authenticatedContext('P',{email:'p@example.com',email_verified:true,firebase:{sign_in_provider:'google.com'}}).firestore();
+ const anon=env.unauthenticatedContext().firestore();
+ const path=db=>doc(db,'approvedUsers','P');
+ const data={enabled:false,email:'p@example.com',createdAt:serverTimestamp()};
+ await assertFails(setDoc(path(anon),data));
+ await assertFails(setDoc(doc(pending,'approvedUsers','OTHER'),data));
+ await assertFails(setDoc(path(pending),{...data,enabled:true}));
+ await assertFails(setDoc(path(pending),{...data,email:'other@example.com'}));
+ await assertFails(setDoc(path(pending),{...data,admin:true}));
+ await assertSucceeds(setDoc(path(pending),data));
+ await assertSucceeds(getDoc(path(pending)));
+ await assertFails(setDoc(path(pending),data));
+ await assertFails(updateDoc(path(pending),{enabled:true}));
+ await assertFails(deleteDoc(path(pending)));
+ await assertFails(getDocs(collection(pending,'users/P/records')));
+ await env.withSecurityRulesDisabled(async c=>updateDoc(path(c.firestore()),{enabled:true}));
+ await assertSucceeds(getDocs(collection(pending,'users/P/records')));
+ await assertFails(setDoc(path(pending),data));
+ await env.withSecurityRulesDisabled(async c=>updateDoc(path(c.firestore()),{enabled:false}));
+ await assertFails(getDocs(collection(pending,'users/P/records')));
+ await assertFails(updateDoc(path(pending),{enabled:true}));
+});
