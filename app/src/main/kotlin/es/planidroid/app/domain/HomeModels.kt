@@ -23,26 +23,27 @@ fun legacyGuessIcon(name:String):String { val n=name.lowercase();return when { l
 fun amountText(n:Double)=if(n%1.0==0.0)n.toLong().toString() else java.math.BigDecimal.valueOf(n).stripTrailingZeros().toPlainString()
 
 enum class ProductType(val symbol:String) {
-    DAIRY("🥛"), CHEESE("🧀"), EGGS("🥚"), FRUIT("🍎"), VEGETABLES("🥦"), MEAT("🥩"), FISH("🐟"), BAKERY("🍞"), FROZEN("🧊"), DRINKS("🥤"), PANTRY("🥫"), CLEANING("🧽"), HYGIENE("🧴"), PAPER("🧻"), MEDICINE("💊"), CLOTHES("👕"), TOOLS("🔧"), OTHER("📦")
+    DAIRY("🥛"), YOGURT("🥣"), CHEESE("🧀"), EGGS("🥚"), FRUIT("🍎"), VEGETABLES("🥦"), MEAT("🥩"), FISH("🐟"), BAKERY("🍞"), FROZEN("🧊"), DRINKS("🥤"), PANTRY("🥫"), CLEANING("🧽"), HYGIENE("🧴"), PAPER("🧻"), MEDICINE("💊"), CLOTHES("👕"), TOOLS("🔧"), OTHER("📦")
 }
 fun productType(name:String):ProductType {
     val n=java.text.Normalizer.normalize(name.lowercase(),java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"),"")
-    fun has(vararg words:String)=words.any{Regex("\\b"+Regex.escape(it)+"[a-z]*\\b").containsMatchIn(n)}
+    fun has(vararg words:String)=words.any{Regex("\\b"+Regex.escape(it)+"(?:s|es)?\\b").containsMatchIn(n)}
     return when {
-        has("leche","yogur","nata","mantequilla","kefir")->ProductType.DAIRY
-        has("queso")->ProductType.CHEESE
+        has("detergente","lejia","limpiador","estropajo","lavavajillas","suavizante","fregona","desinfectante","quitamanchas","bolsa basura","jabon platos","jabon de platos","jabon ropa","jabon de ropa","lavadora")->ProductType.CLEANING
+        has("champu","jabon","gel","pasta dientes","pasta de dientes","cepillo dientes","cepillo de dientes","desodorante","higiene","dentifrico","crema facial","crema corporal","compresa","tampon","afeitado","protector solar")->ProductType.HYGIENE
+        has("papel","servilleta","panuelo")->ProductType.PAPER
+        has("yogur","yogurt","yoghurt","yogures","kefir","cuajada")->ProductType.YOGURT
+        has("queso","mozzarella","parmesano","cheddar","gouda","ricotta","feta","requeson","brie","mascarpone")->ProductType.CHEESE
+        has("leche","nata","mantequilla","lacteo","batido","bebida avena","bebida de soja")->ProductType.DAIRY
         has("huevo")->ProductType.EGGS
-        has("manzana","platano","pera","naranja","mandarina","fresa","uva","kiwi","melon","sandia","fruta","limon","aguacate","mango","piña")->ProductType.FRUIT
-        has("verdura","tomate","patata","cebolla","zanahoria","lechuga","brocoli","pimiento","calabacin","ajo","espinaca","pepino","champi","coliflor")->ProductType.VEGETABLES
-        has("pollo","carne","cerdo","ternera","jamon","pavo","salchicha","chorizo","bacon")->ProductType.MEAT
-        has("pescado","salmon","atun","merluza","bacalao","gamba","sardina","marisco")->ProductType.FISH
-        has("pan","tostada","baguette","croissant","bolleria","galleta")->ProductType.BAKERY
+        has("manzana","platano","banana","pera","naranja","mandarina","fresa","uva","kiwi","melon","sandia","fruta","limon","limones","aguacate","mango","pina","arandano","frambuesa","melocoton","nectarina","ciruela","cereza","granada","papaya","pomelo","higo","albaricoque")->ProductType.FRUIT
+        has("verdura","tomate","patata","cebolla","zanahoria","lechuga","brocoli","pimiento","calabacin","ajo","espinaca","pepino","champinon","champinones","coliflor","berenjena","puerro","apio","acelga","repollo","col","calabaza","esparrago","alcachofa","guisante","judia","habichuela","lenteja","garbanzo","alubia","legumbre","soja","habas","seta","boniato","rabano","remolacha")->ProductType.VEGETABLES
+        has("pollo","carne","cerdo","ternera","jamon","pavo","salchicha","chorizo","bacon","cordero","conejo","filete","solomillo","pechuga","hamburguesa","lomo","mortadela","salami","fuet","panceta")->ProductType.MEAT
+        has("pescado","salmon","atun","merluza","bacalao","gamba","sardina","marisco","dorada","lubina","calamar","pulpo","mejillon","langostino","anchoa","bonito","trucha","rape","caballa","sepia","almeja")->ProductType.FISH
+        has("pan","tostada","baguette","croissant","bolleria","galleta","bizcocho","magdalena","tortilla trigo")->ProductType.BAKERY
         has("congelado","helado","hielo")->ProductType.FROZEN
-        has("agua","zumo","refresco","coca","cerveza","vino","bebida","cafe","te")->ProductType.DRINKS
-        has("arroz","pasta","aceite","harina","azucar","sal","lenteja","garbanzo","conserva","salsa","cereal","espagueti","macarron","bote")->ProductType.PANTRY
-        has("detergente","lejia","limpiador","estropajo","esponja","lavavajillas","suavizante","fregona","bolsa basura")->ProductType.CLEANING
-        has("papel","servilleta","pañuelo")->ProductType.PAPER
-        has("champu","jabon","gel","pasta dientes","desodorante","crema","higiene","dentifrico")->ProductType.HYGIENE
+        has("agua","zumo","refresco","coca","cerveza","vino","bebida","cafe","te","infusion")->ProductType.DRINKS
+        has("arroz","pasta","aceite","harina","azucar","sal","conserva","salsa","cereal","espagueti","macarron","bote","avena","especia","pimienta","vinagre","miel","chocolate","frutos secos")->ProductType.PANTRY
         has("medicamento","paracetamol","ibuprofeno","tiritas","farmacia")->ProductType.MEDICINE
         has("camiseta","calcetin","ropa","pantalon","zapato")->ProductType.CLOTHES
         has("tornillo","pila","bombilla","herramienta","cable")->ProductType.TOOLS

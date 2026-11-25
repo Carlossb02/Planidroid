@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
             try {
                 val tasks=AiConfig.provider(context,uid).parseNaturalLanguage("Fecha actual: "+java.time.LocalDate.now()+"\n"+request).tasks
                 check(tasks.isNotEmpty()){"Gemini no devolvió tareas. Añade más información."}
-                draft=tasks.map { t -> t.copy(id=newId(),planHints=SmartCapture.hints(if(tasks.size==1)request else t.description,t.due,java.time.LocalDate.now())) }
+                draft=tasks.map { t -> t.copy(id=newId(),planHints=PlanningPreferences.merge(t.planHints,SmartCapture.hints(if(tasks.size==1)request else t.description,t.due,java.time.LocalDate.now()),if(tasks.size==1)request else t.description)) }
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { error=e.localizedMessage?:"No se pudo usar Gemini." }
             finally { busy=false }
@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
                 if(!review) {
                     Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
                     Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
-                    OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),placeholder={Text("Preparar el examen del 20 de diciembre, dedicar 8 horas y repasar los temas…")},shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
+                    OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
                     OutlinedButton(onClick=manual,enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Crear tarea o recordatorio manualmente")}
                     Button(onClick={if(!AiConfig.configured(context,uid))connect=true else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -68,6 +68,7 @@ import kotlinx.coroutines.launch
                                 if(task.minutes>0) Text("${task.minutes} min",style=MaterialTheme.typography.labelLarge)
                                 if(task.phases.isNotEmpty()) Text("${task.phases.size} fases",style=MaterialTheme.typography.labelLarge)
                             }
+                            if(task.planHints.windowStart.isNotBlank())Text("Horario: "+task.planHints.windowStart+" – "+task.planHints.windowEnd,style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.daysPerWeek>0) Text("Disponibilidad: "+task.planHints.daysPerWeek+" días por semana",style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.minutesPerTopic>0) Text("Por tema: "+task.planHints.minutesPerTopic+" min",style=MaterialTheme.typography.bodySmall)
                             if(task.minutes==0&&task.planHints.explanation.isNotBlank()) Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)

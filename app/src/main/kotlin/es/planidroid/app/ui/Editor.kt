@@ -18,6 +18,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 import java.time.*
+import kotlinx.coroutines.launch
 
 @Composable fun TaskEditor(initial:Task,groups:List<Group>,close:()->Unit,save:(Task)->Unit,delete:()->Unit,plan:(Task)->Unit,duplicate:(Task)->Unit,allTasks:List<Task> = emptyList()){
     var t by remember(initial){mutableStateOf(initial)};var minutes by remember(initial){mutableStateOf(initial.minutes.toString())};var tags by remember(initial){mutableStateOf(initial.tags.joinToString(", "))};var check by remember{mutableStateOf("")};var phase by remember{mutableStateOf("")};var advanced by remember{mutableStateOf(false)};var objectives by remember{mutableStateOf(initial.checks.isNotEmpty())};var phasesOpen by remember{mutableStateOf(initial.phases.isNotEmpty())};var remove by remember{mutableStateOf(false)};var phaseEdit by remember{mutableStateOf<Phase?>(null)};var error by remember{mutableStateOf("")}
@@ -36,10 +37,10 @@ import java.time.*
     phaseEdit?.let{p->PhaseDetail(p,{phaseEdit=null},{v->t=t.copy(phases=t.phases.map{if(it.id==v.id)v else it});phaseEdit=null})}
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
-@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>)->Unit,external:List<Interval> = emptyList(),allTasks:List<Task> = emptyList()){
+@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>)->Unit,external:List<Interval> = emptyList(),allTasks:List<Task> = emptyList(),uid:String="local",openAgenda:(Task)->Unit={}){
     val today=LocalDate.now()
     val capturedNow=remember(task.id){System.currentTimeMillis()}
-    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow}
+    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow&&it.calendarTitle.isBlank()}
     val kept=existing.filterNot{it in previous}
     val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
     val otherReserved=kept.filter{it.taskId==task.id&&!it.done}.sumOf{((it.end-it.start)/60000).toInt()}
@@ -48,7 +49,9 @@ import java.time.*
     var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
     var from by remember(task.id){mutableStateOf(hints.windowStart.ifBlank{"09:00"})}
     var until by remember(task.id){mutableStateOf(hints.windowEnd.ifBlank{"19:00"})}
-    var max by remember(task.id){mutableStateOf(hints.sessionLimit.coerceIn(1,1440).toString())}
+    var max by remember(task.id){mutableStateOf((if(hints.sessionLimit==60&&hints.compact)120 else hints.sessionLimit).coerceIn(1,1440).toString())}
+    var pause by remember(task.id){mutableStateOf(hints.breakMinutes.toString())}
+    var compact by remember(task.id){mutableStateOf(hints.compact)}
     var daily by remember(task.id){mutableStateOf(hints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
     var countText by remember(task.id){mutableStateOf(hints.topicCount.takeIf{it>0}?.toString().orEmpty())}
     var minutesText by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,kept).takeIf{it>0}?.toString().orEmpty())}
@@ -61,19 +64,49 @@ import java.time.*
     val total=if(hints.minutesPerTopic>0)count?.let{runCatching{StudyIntent.studyMinutes(hints,it)}.getOrNull()} else minutesText.toIntOrNull()?.takeIf{it in 1..100000}?.let{(it.toLong()+doneMinutes+otherReserved).takeIf{n->n<=100000}?.toInt()}
     val remaining=total?.let{(it-doneMinutes-otherReserved).coerceAtLeast(0)}
     val last=runCatching{LocalDate.parse(deadline).let{if(hints.finishBeforeDeadline)it.minusDays(1)else it}}.getOrNull()
-    val result=remember(task,kept,external,start,last,from,until,max,daily,remaining,days){
+    val draftTask=task.copy(minutes=total?:task.minutes,due=deadline,startDate=start,category=Category.DEADLINE,planHints=hints.copy(windowStart=from,windowEnd=until,sessionLimit=max.toIntOrNull()?:120,breakMinutes=pause.toIntOrNull()?:0,compact=compact,dailyMinutes=daily.toIntOrNull()?:0,availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=emptyList(),topicCount=count?:hints.topicCount))
+    val result=remember(draftTask,kept,external,start,last,from,until,max,daily,pause,compact,remaining,days){
         if(last==null||remaining==null||remaining<=0)null
-        else runCatching{SmartPlan.propose(task,kept.filter{it.taskId==task.id},external+OverlapPolicy.blocking(task.id,kept,allTasks.filterNot{it.id==task.id}+task),maxOf(today,LocalDate.parse(start)),last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),remaining,daily.ifBlank{"0"}.toInt())}.getOrNull()
+        else runCatching{
+            require(max.toInt() in 1..1440&&pause.toInt() in 0..60&&daily.ifBlank{"0"}.toInt() in 0..1440&&days.isNotEmpty())
+            require(LocalTime.parse(from)!=LocalTime.parse(until))
+            val phaseBudgets=PhaseBudgets.remaining(draftTask,kept)
+            AgendaPlanner.plan(listOf(AgendaInput(task.id,task.title,remaining,last,task.priority.ordinal,phaseBudgets)),maxOf(today,LocalDate.parse(start)),last,days,LocalTime.MIDNIGHT,LocalTime.MIDNIGHT,max.toInt(),external,existing=kept,tasks=allTasks.filterNot{it.id==task.id}+draftTask)
+        }.getOrNull()
     }
+    val missing=result?.deficits?.sumOf{it.minutes}?:0
     val weekdayLabels=listOf("Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo")
     val shortLabels=listOf("L","M","X","J","V","S","D")
     fun applyRevision(){
         val next=StudyIntent.reviseAvailability(revision,hints)
         val n=StudyIntent.topicsAnswer(revision)
-        if(next==null&&n==null){feedback="Indica los días disponibles o el número de temas.";return}
+        val window=PlanningPreferences.explicitWindow(revision)
+        if(window!=null){from=window.first;until=window.second}
+        if(next==null&&n==null&&window==null){feedback="Indica días, horario (por ejemplo, de 22:00 a 04:00) o número de temas.";return}
         if(next!=null){hints=next;days=StudyIntent.availableDays(next)}
         if(n!=null&&hints.minutesPerTopic>0)countText=n.toString()
         revision="";feedback="Propuesta recalculada. Revisa las sesiones."
+    }
+    val ctx=LocalContext.current;val coroutine=rememberCoroutineScope()
+    var aiBusy by remember{mutableStateOf(false)};var aiConsent by remember{mutableStateOf(false)};var connect by remember{mutableStateOf(false)}
+    fun reviseWithGemini(){
+        val request=revision.trim();if(request.isBlank())return
+        aiBusy=true
+        coroutine.launch{
+            try{
+                val current=draftTask.copy(attachments=emptyList(),contact="",phone="")
+                val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).parseNaturalLanguage("Modifica solo las preferencias indicadas. Conserva el resto. Tarea actual: "+encode(current)+"\nCambio solicitado: "+request).tasks.singleOrNull()?:error("Gemini no devolvió una tarea")
+                val merged=PlanningPreferences.merge(response.planHints,SmartCapture.hints(request,deadline,today),request)
+                val window=PlanningPreferences.explicitWindow(request)
+                if(window!=null||merged.windowStart.isNotBlank()){from=window?.first?:merged.windowStart;until=window?.second?:merged.windowEnd}
+                if(merged.availableWeekdays.isNotEmpty()||merged.daysPerWeek>0){days=StudyIntent.availableDays(merged)}
+                if(merged.topicCount>0)countText=merged.topicCount.toString()
+                if(merged.dailyMinutes>0)daily=merged.dailyMinutes.toString()
+                max=merged.sessionLimit.toString();pause=merged.breakMinutes.toString();compact=merged.compact
+                hints=hints.copy(minutesPerTopic=merged.minutesPerTopic.takeIf{it>0}?:hints.minutesPerTopic,topicCount=merged.topicCount.takeIf{it>0}?:hints.topicCount,finishBeforeDeadline=hints.finishBeforeDeadline||merged.finishBeforeDeadline)
+                revision="";feedback="Preferencias revisadas. Comprueba el horario antes de guardar."
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){feedback=e.localizedMessage?:"Gemini no disponible"}finally{aiBusy=false}
+        }
     }
     fun toggleDay(day:DayOfWeek){
         days=if(day in days)days-day else days+day
@@ -107,13 +140,17 @@ import java.time.*
                         }
                         Field(revision,{revision=it.take(300)},"Cambiar con texto")
                         OutlinedButton(onClick={applyRevision()},enabled=revision.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Recalcular")}
+                        TextButton(enabled=revision.isNotBlank()&&!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true}){Text(if(aiBusy)"Consultando…" else "Ajustar con Gemini")}
                         if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
                         Text("Horario propuesto: "+from+" – "+until,style=MaterialTheme.typography.labelMedium)
                         TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar ajustes" else "Ajustar horario y duración")}
                         if(advanced){
                             DateField(start,{start=it},"Desde",false);DateField(deadline,{deadline=it},"Fecha límite",false)
                             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(from,{from=it},"Desde HH:mm")};Column(Modifier.weight(1f)){Field(until,{until=it},"Hasta HH:mm")}}
-                            Field(max,{max=it},"Máximo por sesión (min)");Field(daily,{daily=it},"Máximo diario (opcional)")
+                            Field(max,{max=it},"Máximo por bloque (min)");Field(daily,{daily=it},"Máximo por noche/día (opcional)")
+                            Field(pause,{pause=it},"Pausa base (min, 0 sin pausas)")
+                            Row(verticalAlignment=Alignment.CenterVertically){Switch(compact,{compact=it});Text("Concentrar bloques largos")}
+                            Text("El horario puede cruzar medianoche. La madrugada pertenece a la noche anterior.",style=MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -123,33 +160,38 @@ import java.time.*
                         days.isEmpty()->Text("Selecciona tus días de estudio.",color=MaterialTheme.colorScheme.error)
                         remaining==0->Text("Ya has reservado o completado todo el tiempo necesario.")
                         result==null->Text("Revisa la fecha, la duración y el horario.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        else->GlassCard(tint=if(result.missingMinutes==0)Mint else Peach){
-                            Text(if(result.missingMinutes==0)"Tu planificación" else "Faltan "+result.missingMinutes+" min",style=MaterialTheme.typography.titleLarge)
-                            Text(result.intervals.map{sessionDate(it.start)}.distinct().size.toString()+" días · "+result.intervals.sumOf{(it.end-it.start)/60000}+" min reservados")
+                        else->GlassCard(tint=if(missing==0)Mint else Peach){
+                            Text(if(missing==0)"Tu planificación" else "Faltan "+missing+" min",style=MaterialTheme.typography.titleLarge)
+                            Text(result.blocks.map{sessionDate(it.start)}.distinct().size.toString()+" días · "+result.blocks.sumOf{(it.end-it.start)/60000}+" min reservados")
                             if(hints.finishBeforeDeadline)Text("El día del examen queda libre.",style=MaterialTheme.typography.bodySmall)
-                            if(result.missingMinutes>0)Text("Amplía el horario o añade días. No se han reservado horas que no caben.",style=MaterialTheme.typography.bodySmall)
+                            if(missing>0){Text("No cabe todo en tus horas disponibles.",style=MaterialTheme.typography.bodySmall);Button(onClick={openAgenda(draftTask)},enabled=total!=null){Text("Buscar reorganización de agenda")}}
+                            if(result.breaks.isNotEmpty())Text(result.breaks.sumOf{(it.end-it.start)/60000}.toString()+" min de pausas sugeridas · no cuentan como estudio",style=MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
-                result?.intervals?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->
+                result?.blocks?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->
                     item{
                         GlassCard(tint=Blue){
                             Text(day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",java.util.Locale("es","ES"))).replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.titleMedium)
                             Text(blocks.sumOf{(it.end-it.start)/60000}.toString()+" min de estudio",style=MaterialTheme.typography.labelLarge)
-                            blocks.forEach{s->Text(time(s.start)+" – "+time(s.end),style=MaterialTheme.typography.bodyMedium)}
+                            val pauses=result?.breaks.orEmpty().filter{sessionDate(it.start)==day}
+                            val timeline=blocks.map{Triple(it.start,it.end,draftTask.phases.find{p->p.id==it.phaseId}?.title?:"Estudio")}+pauses.map{Triple(it.start,it.end,"Descanso sugerido")}
+                            timeline.sortedBy{it.first}.forEach{(a,b,label)->Text(time(a)+" – "+time(b)+" · "+label,style=MaterialTheme.typography.bodyMedium)}
                         }
                     }
                 }
                 item{
-                    Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true&&total!=null,onClick={
+                    Button(enabled=!approved&&result?.blocks?.isNotEmpty()==true&&total!=null,onClick={
                         val r=result?:return@Button;val effort=total?:return@Button
                         approved=true
-                        val updated=task.copy(minutes=effort,due=deadline,category=Category.DEADLINE,startDate=start,planHints=hints.copy(topicCount=count?:hints.topicCount,dailyMinutes=daily.ifBlank{"0"}.toInt(),availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,windowStart=from,windowEnd=until,sessionLimit=max.toInt(),explanation=""))
-                        accept(updated,r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)},previous)
-                    },modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)if(previous.isEmpty())"Guardar tarea y agenda" else "Guardar nueva planificación" else "Aceptar plan parcial")}
+                        val updated=draftTask.copy(minutes=effort)
+                        accept(updated,r.blocks.map{Session(taskId=task.id,phaseId=it.phaseId,start=it.start,end=it.end)},previous)
+                    },modifier=Modifier.fillMaxWidth()){Text(if(missing==0)if(previous.isEmpty())"Guardar tarea y agenda" else "Guardar nueva planificación" else "Aceptar plan parcial")}
                     TextButton(onClick=close){Text("Cancelar")}
                 }
             }
         }
     }
+    if(connect)PersonalGeminiDialog(uid){connect=false}
+    if(aiConsent)Confirm("Revisar con Gemini","Se enviarán los datos de esta tarea sin adjuntos ni contactos y el cambio solicitado.",{aiConsent=false},{reviseWithGemini()})
 }

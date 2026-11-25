@@ -130,13 +130,14 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
 }
 
 @Composable private fun SharedShoppingDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit){
-    val data=remember(s.id,s.version){decode<SharedShopping>(s.body)}
+    val data=remember(s.id,s.version,s.body){decode<SharedShopping>(s.body)}
     val write=s.role in listOf("owner","editor","admin")
     var quick by remember(s.id){mutableStateOf("")}
     var scan by remember(s.id){mutableStateOf(false)}
     var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
     var historyOpen by remember{mutableStateOf(false)}
     var recipes by remember{mutableStateOf(false)}
+    var selecting by remember(s.id){mutableStateOf(false)};var selectedIds by remember(s.id){mutableStateOf(emptySet<String>())};var confirmDelete by remember{mutableStateOf(false)}
     fun update(next:SharedShopping){access.work(refresh=false){it.update(s,s.title,encode(next))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
         TextButton(onClick=back){Text("‹ Listas")}
@@ -149,13 +150,14 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         }
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
+        if(write)Row(verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selecting=!selecting;selectedIds=emptySet()}){Text(if(selecting)"Cancelar selección" else "Seleccionar productos")};if(selecting)TextButton(onClick={selectedIds=data.items.filter{it.pending}.map{it.id}.toSet()}){Text("Todos")};if(selecting)IconButton(enabled=selectedIds.isNotEmpty()&&!access.busy,onClick={confirmDelete=true}){Icon(Icons.Outlined.Delete,"Eliminar seleccionados",tint=MaterialTheme.colorScheme.error)}}
         data.items.filter{it.pending}.forEach{p->
             Surface(shape=RoundedCornerShape(18.dp),color=soft(if(s.role=="owner")Mint else Lilac,.12f)){
                 Row(Modifier.fillMaxWidth().padding(8.dp),verticalAlignment=Alignment.CenterVertically){
-                    Checkbox(false,{if(it&&write){val h=Purchase(shoppingId=p.id,name=p.name,quantity=p.quantity,unit=p.unit,routine=p.routine,icon=p.icon,quantitySpecified=p.quantitySpecified);update(data.copy(items=data.items.map{v->if(v.id==p.id)v.copy(pending=false)else v},history=(data.history+h).takeLast(100))) }},enabled=write&&!access.busy)
+                    if(selecting)Checkbox(p.id in selectedIds,{v->selectedIds=if(v)selectedIds+p.id else selectedIds-p.id},enabled=write&&!access.busy)else Checkbox(false,{if(it&&write){val h=Purchase(shoppingId=p.id,name=p.name,quantity=p.quantity,unit=p.unit,routine=p.routine,icon=p.icon,quantitySpecified=p.quantitySpecified);update(data.copy(items=data.items.map{v->if(v.id==p.id)v.copy(pending=false)else v},history=(data.history+h).takeLast(100))) }},enabled=write&&!access.busy)
                     ProductGlyph(p.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)){Text(p.name,style=MaterialTheme.typography.titleMedium);if(p.quantitySpecified)Text((amountText(p.quantity)+" "+p.unit).trim(),style=MaterialTheme.typography.bodySmall)}
-                    if(write)IconButton(enabled=!access.busy,onClick={editing=p}){Icon(Icons.Outlined.Edit,"Editar")}
+                    if(write&&!selecting)IconButton(enabled=!access.busy,onClick={editing=p}){Icon(Icons.Outlined.Edit,"Editar")}
                 }
             }
         }
@@ -166,7 +168,8 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
             Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(p.name);Text(sessionDate(p.boughtAt).toString(),style=MaterialTheme.typography.bodySmall)};if(write&&!p.undone)TextButton(enabled=!access.busy,onClick={val old=data.items.find{it.id==p.shoppingId};val next=if(old!=null)data.items.map{if(it.id==old.id)it.copy(pending=true)else it}else data.items+Shopping(name=p.name,quantity=p.quantity,unit=p.unit,quantitySpecified=p.quantitySpecified,icon=p.icon);update(data.copy(items=next,history=data.history.map{if(it.id==p.id)it.copy(undone=true)else it}))}){Text("Deshacer")}}
         }
     }
-    if(recipes)RecipeSuggestions(Cloud.auth(LocalContext.current)?.currentUser?.uid?:"local",data.items.filter{it.pending}.map{it.name},"",{recipes=false},{update(data.copy(items=data.items+it))})
+    if(confirmDelete)Confirm("Eliminar "+selectedIds.size+" productos","No se registrarán como compras.",{confirmDelete=false},{update(data.copy(items=data.items.filterNot{it.id in selectedIds}));selectedIds=emptySet();selecting=false})
+    if(recipes)RecipeSuggestions(Cloud.auth(LocalContext.current)?.currentUser?.uid?:"local",data.items.filter{it.pending},"",{recipes=false},{update(data.copy(items=data.items+it))})
     if(scan)ShoppingScan("",{scan=false},{update(data.copy(items=data.items+it));scan=false})
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=data.items.map{if(it.id==p.id)next.copy(itemId="")else it}));editing=null})}
 }
