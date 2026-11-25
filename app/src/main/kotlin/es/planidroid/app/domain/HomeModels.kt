@@ -17,8 +17,8 @@ object LayoutGrid {
     fun place(name:String,type:ZoneType,door:Boolean,others:List<Zone>,w:Int=4,h:Int=1):Zone? { for(y in 0..HEIGHT-h) for(x in 0..WIDTH-w) { val z=Zone(name,type,door,x,y,w,h);if(fits(z,others))return z };return null }
     fun zones(f:Furniture):List<Zone> = f.zones.ifEmpty { f.compartments.take(8).mapIndexed { i,n->Zone(n,y=i) } }
 }
-@Serializable data class Shopping(val id:String=newId(),val name:String,val quantity:Double=1.0,val unit:String="ud",val routine:Boolean=false,val pending:Boolean=true,val itemId:String="",val minimum:Double=0.0,val target:Double=1.0,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true)
-@Serializable data class Purchase(val id:String=newId(),val shoppingId:String,val name:String,val quantity:Double,val unit:String,val routine:Boolean,val boughtAt:Long=System.currentTimeMillis(),val itemId:String="",val stockBefore:Double?=null,val stockAfter:Double?=null,val undone:Boolean=false,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true)
+@Serializable data class Shopping(val id:String=newId(),val name:String,val quantity:Double=1.0,val unit:String="ud",val routine:Boolean=false,val pending:Boolean=true,val itemId:String="",val minimum:Double=0.0,val target:Double=1.0,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true,val referenceUrl:String="",val referenceTitle:String="")
+@Serializable data class Purchase(val id:String=newId(),val shoppingId:String,val name:String,val quantity:Double,val unit:String,val routine:Boolean,val boughtAt:Long=System.currentTimeMillis(),val itemId:String="",val stockBefore:Double?=null,val stockAfter:Double?=null,val undone:Boolean=false,val icon:String="🛒",val listId:String="",val quantitySpecified:Boolean=true,val referenceUrl:String="",val referenceTitle:String="")
 object ShoppingLogic {
     fun needed(s:Shopping,i:Item?):Double = if(s.routine && i!=null && i.amount<s.minimum) (s.target-i.amount).coerceAtLeast(0.0) else if(s.pending) s.quantity else 0.0
     fun canUndo(p:Purchase,i:Item?):Boolean = p.stockAfter!=null && p.stockBefore!=null && i!=null && abs(i.amount-p.stockAfter)<0.000001
@@ -64,6 +64,6 @@ object ShoppingText {
         val a=quantity.matchEntire(line);val b=if(a==null)trailing.matchEntire(line)else null
         val name=when{a!=null->a.groupValues[3];b!=null->b.groupValues[1];else->line}.trim().take(180)
         val n=(a?.groupValues?.get(1)?:b?.groupValues?.get(2))?.replace(',','.')?.toDoubleOrNull()?.takeIf{it.isFinite()&&it>0}
-        Shopping(name=name,quantity=n?:1.0,unit=if(n==null)"" else a?.groupValues?.get(2)?:b?.groupValues?.get(3).orEmpty(),quantitySpecified=n!=null,icon=guessIcon(name),listId=listId)
+        Shopping(name=name,quantity=n?:1.0,unit=if(n==null)"" else SpanishUnits.canonical(a?.groupValues?.get(2)?:b?.groupValues?.get(3).orEmpty()).orEmpty(),quantitySpecified=n!=null,icon=guessIcon(name),listId=listId)
     }.filter{it.name.isNotBlank()}
 }

@@ -43,7 +43,7 @@ object SmartPlan {
         val busy=existing.map{Interval(it.start,it.end)}+external
         val blocks=mutableListOf<Interval>();val breaks=mutableListOf<Interval>()
         fun allocate(window:Interval,wanted:Int){
-            val used=(existing.filter{it.taskId==task.id&&!it.isBreak}.map{Interval(it.start,it.end)}+blocks).sumOf{((minOf(it.end,window.end)-maxOf(it.start,window.start)).coerceAtLeast(0)/60000).toInt()}
+            val used=(existing.filter{it.taskId==task.id&&!it.isBreak&&(it.done||it.end>now)}.map{Interval(it.start,it.end)}+blocks).sumOf{((minOf(it.end,window.end)-maxOf(it.start,window.start)).coerceAtLeast(0)/60000).toInt()}
             val cap=if(dailyLimit>0)(dailyLimit-used).coerceAtLeast(0)else remaining
             val target=minOf(remaining,wanted,cap)
             if(target>0){

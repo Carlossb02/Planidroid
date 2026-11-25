@@ -133,20 +133,21 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     val data=remember(s.id,s.version,s.body){decode<SharedShopping>(s.body)}
     val write=s.role in listOf("owner","editor","admin");val ctx=LocalContext.current
     var quick by remember(s.id){mutableStateOf("")};var scan by remember(s.id){mutableStateOf(false)};var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
-    var recipes by remember{mutableStateOf(false)};var menu by remember{mutableStateOf(false)};var historyOpen by remember{mutableStateOf(false)}
+    var recipes by remember{mutableStateOf(false)};var shoppingAi by remember{mutableStateOf(false)};var menu by remember{mutableStateOf(false)};var historyOpen by remember{mutableStateOf(false)}
     var selecting by remember(s.id){mutableStateOf(false)};var selectedIds by remember(s.id){mutableStateOf(emptySet<String>())};var confirmDelete by remember{mutableStateOf(false)}
     val pending=data.items.filter{it.pending};val visibleIds=pending.map{it.id}.toSet();val selected=selectedIds.intersect(visibleIds)
     fun clear(){selecting=false;selectedIds=emptySet()}
     fun select(id:String){selecting=true;selectedIds=if(id in selectedIds)selectedIds-id else selectedIds+id}
     fun update(next:SharedShopping){access.work(refresh=false){it.update(s,s.title,encode(next))}}
-    fun buy(p:Shopping){val h=Purchase(shoppingId=p.id,name=p.name,quantity=p.quantity,unit=p.unit,routine=p.routine,icon=p.icon,quantitySpecified=p.quantitySpecified);update(data.copy(items=data.items.map{if(it.id==p.id)it.copy(pending=false)else it},history=(data.history+h).takeLast(100)))}
+    fun buy(p:Shopping){val h=Purchase(shoppingId=p.id,name=p.name,quantity=p.quantity,unit=p.unit,routine=p.routine,icon=p.icon,quantitySpecified=p.quantitySpecified,referenceUrl=p.referenceUrl,referenceTitle=p.referenceTitle);update(data.copy(items=data.items.map{if(it.id==p.id)it.copy(pending=false)else it},history=(data.history+h).takeLast(100)))}
     Column(Modifier.fillMaxSize().padding(horizontal=16.dp)){
         Row(verticalAlignment=Alignment.CenterVertically){IconButton(onClick=back){Icon(Icons.Outlined.ArrowBack,"Volver")}
             Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.titleLarge);Text(roleLabel(s.role)+" · "+pending.size+" pendientes",style=MaterialTheme.typography.labelMedium)}
             if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir")}
-            if(write)Box{IconButton(onClick={menu=true}){Icon(Icons.Outlined.MoreVert,"Acciones")};DropdownMenu(menu,{menu=false}){DropdownMenuItem(text={Text("Recetas con Gemini")},onClick={menu=false;recipes=true});DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;historyOpen=false;selecting=true});DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;editing=Shopping(name="",unit="",quantitySpecified=false)})}}
+            if(write)Box{IconButton(onClick={menu=true}){Icon(Icons.Outlined.MoreVert,"Acciones")};DropdownMenu(menu,{menu=false}){DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;historyOpen=false;selecting=true});DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;editing=Shopping(name="",unit="",quantitySpecified=false)})}}
         }
         if(write&&!selecting)ShoppingInput(quick,{quick=it.take(500)},{update(data.copy(items=data.items+ShoppingText.parse(quick)));quick=""},{scan=true},!access.busy)
+        if(write&&!selecting&&!historyOpen)ShoppingAiActions({recipes=true},{shoppingAi=true},!access.busy)
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){FilterChip(!historyOpen,{historyOpen=false;clear()},label={Text("Lista")});FilterChip(historyOpen,{historyOpen=true;clear()},label={Text("Historial")})}
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
@@ -155,7 +156,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
             if(historyOpen){
                 if(data.history.isEmpty())item{Text("Todavía no hay compras.")}
                 data.history.asReversed().forEach{p->item(key=p.id){
-                    Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){ProductGlyph(p.name,Modifier.size(24.dp));Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(p.name);Text(sessionDate(p.boughtAt).toString()+(if(p.undone)" · Anulada" else ""),style=MaterialTheme.typography.bodySmall)};if(write&&!p.undone)TextButton(enabled=!access.busy,onClick={val old=data.items.find{it.id==p.shoppingId};val next=if(old!=null)data.items.map{if(it.id==old.id)it.copy(pending=true)else it}else data.items+Shopping(name=p.name,quantity=p.quantity,unit=p.unit,quantitySpecified=p.quantitySpecified,icon=p.icon);update(data.copy(items=next,history=data.history.map{if(it.id==p.id)it.copy(undone=true)else it}))}){Text("Deshacer")}}
+                    Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){ProductGlyph(p.name,Modifier.size(24.dp));Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(p.name);Text(sessionDate(p.boughtAt).toString()+(if(p.undone)" · Anulada" else ""),style=MaterialTheme.typography.bodySmall)};if(write&&!p.undone)TextButton(enabled=!access.busy,onClick={val old=data.items.find{it.id==p.shoppingId};val next=if(old!=null)data.items.map{if(it.id==old.id)it.copy(pending=true)else it}else data.items+Shopping(name=p.name,quantity=p.quantity,unit=p.unit,quantitySpecified=p.quantitySpecified,icon=p.icon,referenceUrl=p.referenceUrl,referenceTitle=p.referenceTitle);update(data.copy(items=next,history=data.history.map{if(it.id==p.id)it.copy(undone=true)else it}))}){Text("Deshacer")}}
                 }}
             }else{
                 if(pending.isEmpty())item{Text("Todo al día",style=MaterialTheme.typography.titleMedium)}
@@ -167,6 +168,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         }
     }
     if(confirmDelete)Confirm("Eliminar "+selected.size+" productos","No se registrarán como compras.",{confirmDelete=false},{update(data.copy(items=data.items.filterNot{it.id in selected}));clear()})
+    if(shoppingAi)ShoppingAssistant(Cloud.auth(ctx)?.currentUser?.uid?:"local",pending,"",{shoppingAi=false},{update(data.copy(items=data.items+it))},shared=true)
     if(recipes)RecipeSuggestions(Cloud.auth(ctx)?.currentUser?.uid?:"local",pending,"",{recipes=false},{update(data.copy(items=data.items+it))})
     if(scan)ShoppingScan("",{scan=false},{update(data.copy(items=data.items+it));scan=false})
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=if(data.items.any{it.id==p.id})data.items.map{if(it.id==p.id)next.copy(itemId="")else it}else data.items+next.copy(itemId="")));editing=null})}

@@ -14,12 +14,12 @@ import es.planidroid.app.domain.*
 import java.time.*
 import kotlinx.coroutines.launch
 
-@Composable fun AgendaEditor(tasks:List<Task>,sessions:List<Session>,close:()->Unit,accept:(List<Session>,List<Session>,List<Task>)->Unit,external:List<Interval> = emptyList(),uid:String="local",draft:Task?=null){
+@Composable fun AgendaEditor(tasks:List<Task>,sessions:List<Session>,close:()->Unit,accept:(List<Session>,List<Session>,List<Task>,(String?)->Unit)->Unit,external:List<Interval> = emptyList(),uid:String="local",draft:Task?=null){
     val today=LocalDate.now()
     val now=remember{System.currentTimeMillis()}
     val eligible=tasks.filter{it.status !in listOf(Status.DONE,Status.ARCHIVED,Status.BLOCKED)&&TaskConstraints.unmet(it,tasks).isEmpty()}
     fun effort(t:Task)=t.minutes.takeIf{it>0}?:t.phases.sumOf{it.minutes}
-    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else TaskConstraints.remaining(it,sessions)>0}.map{it.id}.toSet())}
+    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else TaskConstraints.remaining(it,sessions)>0||effort(it)==0}.map{it.id}.toSet())}
     var estimates by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var topics by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var expanded by remember{mutableStateOf<String?>(null)}
@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
     var from by remember{mutableStateOf("00:00")};var until by remember{mutableStateOf("00:00")}
     var max by remember{mutableStateOf("180")};var margin by remember{mutableStateOf("0")}
     var exceptions by remember{mutableStateOf("")};var advanced by remember{mutableStateOf(false)}
+    var aiOpen by remember{mutableStateOf(false)}
     var includeToday by remember{mutableStateOf(true)}
     var replan by remember{mutableStateOf(draft!=null)};var days by remember{mutableStateOf(DayOfWeek.entries.toSet())}
     var proposal by remember{mutableStateOf<AgendaProposal?>(null)};var replacing by remember{mutableStateOf(emptyList<Session>())}
@@ -59,15 +60,16 @@ import kotlinx.coroutines.launch
     }
     val replacements=if(replan)sessions.filter{it.taskId in picked&&!it.done&&it.start>now&&it.calendarTitle.isBlank()}else emptyList()
     val kept=sessions.filterNot{it in replacements}
-    LaunchedEffect(tasks,sessions,external){reset()}
-    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){
+    LaunchedEffect(tasks,sessions,external){if(!submitted)reset()}
+    Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
         Surface(Modifier.fillMaxSize()){
-            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
+            LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 item{
-                    Section("Planificar mi agenda","Selecciona tus tareas. Las sesiones no se solapan salvo permiso expreso.")
-                    Text("Respeta el horario de cada tarea, las citas y los descansos. 00:00–00:00 permite toda la jornada como límite global.",style=MaterialTheme.typography.bodySmall)
-                    Field(request,{request=it.take(400)},"Petición a Gemini (opcional)",false)
-                    OutlinedButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true},modifier=Modifier.fillMaxWidth()){Text(if(aiBusy)"Analizando calendario…" else "Sugerir reorganización con Gemini")}
+                    Section("Organizar agenda")
+                    TextButton(onClick={aiOpen=!aiOpen}){Text(if(aiOpen)"Ocultar Gemini" else "✦ Optimizar con Gemini")}
+                    if(aiOpen){Field(request,{request=it.take(1200)},"¿Qué quieres ajustar?",false)
+                    OutlinedButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true},modifier=Modifier.fillMaxWidth()){Text(if(aiBusy)"Analizando calendario…" else "Consultar")}}
                     if(advice.isNotBlank())GlassCard(tint=Lilac){Text(advice);restPolicies.forEach{(id,p)->Text((eligible.find{it.id==id}?.title?:"Tarea")+": "+p.first+" min de trabajo / "+p.second+" min de pausa · "+p.third,style=MaterialTheme.typography.bodySmall)};suggested.forEach{id->Text("Revisar: "+eligible.find{it.id==id}?.title.orEmpty())};if(suggested.isNotEmpty())TextButton(onClick={picked=picked+suggested;replan=true;reset()}){Text("Seleccionar tareas sugeridas")}}
                     Row(verticalAlignment=Alignment.CenterVertically){
                         Switch(replan,{replan=it;reset()});Text("Reorganizar sesiones futuras",Modifier.padding(start=8.dp))
@@ -136,7 +138,7 @@ import kotlinx.coroutines.launch
                             val excluded=exceptions.split(',').map{it.trim()}.filter{it.isNotBlank()}.map{LocalDate.parse(it)}.map{Interval(it.atStartOfDay(zone).toInstant().toEpochMilli(),it.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())}
                             val updates=tasks.map{t->selected.find{it.id==t.id}?:t.copy(overlapWith=permissions[t.id]?:t.overlapWith)}
                             val inputs=selected.map{t->
-                                val phaseBudgets=t.phases.filterNot{it.done}.map{p->p.id to (p.minutes-maxOf(p.actualMinutes,kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&s.done}.sumOf{s->((s.end-s.start)/60000).toInt()})-kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&!s.done}.sumOf{s->((s.end-s.start)/60000).toInt()}).coerceAtLeast(0)}
+                                val phaseBudgets=t.phases.filterNot{it.done}.map{p->p.id to (p.minutes-maxOf(p.actualMinutes,kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&s.done}.sumOf{s->((s.end-s.start)/60000).toInt()})-kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&!s.done&&s.end>now}.sumOf{s->((s.end-s.start)/60000).toInt()}).coerceAtLeast(0)}
                                 AgendaInput(t.id,t.title,TaskConstraints.remaining(t,kept),t.due.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it).minusDays(buffer)}?:last,t.priority.ordinal,phaseBudgets,t.startDate.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it)})
                             }
                             val p=AgendaPlanner.plan(inputs,if(includeToday)today else today.plusDays(1),last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),external+excluded,zone,minStart=System.currentTimeMillis()+30_000L,existing=kept,tasks=updates)
@@ -163,9 +165,10 @@ import kotlinx.coroutines.launch
                         if(p.blocks.any{other->other.taskId!=b.taskId&&other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)}||kept.any{other->other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)})Text("Solapamiento autorizado",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
                     }}
                     if(p.breaks.isNotEmpty())item{GlassCard(tint=Mint){Text("Descansos sugeridos",style=MaterialTheme.typography.titleMedium);p.breaks.take(50).forEach{Text(sessionDate(it.start).toString()+" · "+time(it.start)+" – "+time(it.end))}}}
-                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={if(p.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){reset();error="El horario ha avanzado. Calcula de nuevo."}else{submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates)}}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
+                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={if(p.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){reset();error="El horario ha avanzado. Calcula de nuevo."}else{submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates){failure->submitted=false;if(failure!=null)error=failure}}}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
                 }
-                item{TextButton(onClick=close){Text("Cancelar")}}
+            }
+            Surface(tonalElevation=2.dp){Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically){TextButton(enabled=!submitted,onClick=close){Text("Cerrar")};Spacer(Modifier.weight(1f));if(submitted)CircularProgressIndicator(Modifier.size(24.dp));if(error.isNotBlank())Text(error,Modifier.weight(2f),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}}
             }
         }
     }

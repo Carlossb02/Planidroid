@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ internal fun productAccent(type:ProductType):Color=when(type){ProductType.VEGETA
 }
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun ShoppingRow(product:Shopping,detail:String,selecting:Boolean,checked:Boolean,canWrite:Boolean=true,buy:(()->Unit)?=null,select:()->Unit={},edit:()->Unit={},remove:()->Unit={},repeat:(()->Unit)?=null){
+    val ctx=LocalContext.current
     var menu by remember(product.id){mutableStateOf(false)}
     Row(Modifier.fillMaxWidth().background(if(selecting&&checked)MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).combinedClickable(enabled=canWrite,onClick={if(selecting)select()else edit()},onLongClick=select).padding(end=4.dp),verticalAlignment=Alignment.CenterVertically){
         if(selecting||buy!=null)Checkbox(checked=selecting&&checked,onCheckedChange={if(selecting)select()else if(it)buy?.invoke()},enabled=canWrite)
@@ -36,6 +38,7 @@ internal fun productAccent(type:ProductType):Color=when(type){ProductType.VEGETA
             Text(product.name,style=MaterialTheme.typography.bodyLarge)
             if(detail.isNotBlank())Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if(product.referenceUrl.isNotBlank()&&!selecting)IconButton(onClick={openShoppingReference(ctx,product.referenceUrl)}){Icon(Icons.Default.OpenInNew,"Abrir referencia de supermercado",Modifier.size(18.dp))}
         if(canWrite&&!selecting)Box{
             IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Opciones de "+product.name)}
             DropdownMenu(menu,{menu=false}){
