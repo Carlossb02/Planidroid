@@ -42,7 +42,7 @@ object Planner {
                     val recovery=PlanningPreferences.recovery(n,breakMinutes)*60000L
                     if(remaining>0&&recovery>0&&to-cursor>=recovery+60000){
                         breaks+=Interval(cursor,cursor+recovery);cursor+=recovery
-                    }else if(remaining>0&&recovery>0)break
+                    }else if(remaining>0&&recovery>0){cursor=to;break}
                 }
             }
             for(b in occupied){

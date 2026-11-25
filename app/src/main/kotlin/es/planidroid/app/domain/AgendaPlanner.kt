@@ -37,7 +37,7 @@ object AgendaPlanner {
                 breaks+=result.breaks
                 val tail=result.intervals.lastOrNull()
                 cursor=tail?.end?:cursor
-                if(tail!=null&&id!=parts.last().first&&result.missingMinutes==0){val pause=PlanningPreferences.recovery(((tail.end-tail.start)/60000).toInt(),h.breakMinutes)*60000L;val endPause=cursor+pause;if(pause>0&&hardBusy.none{it.start<endPause&&cursor<it.end}){breaks+=Interval(cursor,endPause);cursor=endPause}}
+                if(tail!=null&&id!=parts.last().first&&result.missingMinutes==0){val pause=PlanningPreferences.recovery(((tail.end-tail.start)/60000).toInt(),h.breakMinutes)*60000L;val endPause=cursor+pause;if(pause>0&&Planner.windows(first,limit,allowed,earliestTime,latestTime,zone).any{it.start<=cursor&&it.end>=endPause}&&hardBusy.none{it.start<endPause&&cursor<it.end}){breaks+=Interval(cursor,endPause);cursor=endPause}}
                 totalMissing+=result.missingMinutes
             }
             if(totalMissing>0)deficits+=AgendaDeficit(t.taskId,t.title,totalMissing)
