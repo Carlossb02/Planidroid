@@ -1,0 +1,47 @@
+# Build and IDE output
+.gradle/
+.idea/
+**/build/
+local.properties
+
+# Private configuration (never commit, even in a build variant)
+google-services.json
+GoogleService-Info.plist
+secrets.properties
+secrets.json
+credentials.json
+credentials.properties
+keystore.properties
+signing.properties
+.env
+.env.*
+*.env
+*.env.*
+*service-account*.json
+*firebase-adminsdk*.json
+*client_secret*.json
+*client-secret*.json
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.kdbx
+secrets/
+credentials/
+.private/
+
+# User data, exports and local artifacts
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.apk
+*.aab
+*.zip
+backup*.json
+planidroid_backup*.json
+backups/
+exports/
