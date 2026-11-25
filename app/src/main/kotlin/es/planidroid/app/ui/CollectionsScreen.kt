@@ -34,6 +34,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
         scope.launch{
             try{action(cloud);val r=cloud.list();spaces=r.first;invites=r.second}
             catch(e:CancellationException){throw e}
+            catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
             finally{busy=false}
         }
@@ -43,7 +44,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
 @Composable private fun collectionAccess(uid:String):CollectionAccess{
     val ctx=LocalContext.current;val scope=rememberCoroutineScope()
     val state=remember(uid){CollectionAccess(if(uid=="local")null else runCatching{SharedCloud(ctx)}.getOrNull(),scope)}
-    LaunchedEffect(state){state.work()}
+    // Load cloud collections only when the user explicitly requests them.
     return state
 }
 @Composable private fun OnlineCollections(state:CollectionAccess,uid:String){
@@ -55,6 +56,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             Text("Compartido",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
             IconButton(onClick={state.work()},enabled=!state.busy){Icon(Icons.Outlined.Refresh,"Actualizar")}
         }
+        Text("Pulsa actualizar para consultar tus listas, hogares e invitaciones online.",style=MaterialTheme.typography.bodySmall)
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(state.error.isNotBlank())Text(state.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
         state.invites.forEach{m->GlassCard(tint=Lilac){
@@ -84,7 +86,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         }
-    },confirmButton={Button(enabled=!busy&&email.isNotBlank(),onClick={val target=email;work{api.invite(space,target,role);email=""}}){Text("Invitar")}},dismissButton={TextButton(enabled=!busy,onClick={access.work();close()}){Text("Cerrar")}})
+    },confirmButton={Button(enabled=!busy&&email.isNotBlank(),onClick={val target=email;work{api.invite(space,target,role);email=""}}){Text("Invitar")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cerrar")}})
 }
 
 @Composable fun ShoppingListsScreen(uid:String,lists:List<ShoppingList>,shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel){
@@ -118,7 +120,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         }
     }
     if(create)CollectionNameDialog("Nueva lista",{create=false},{model.save(ShoppingList(name=it))})
-    publish?.let{l->Confirm("Compartir esta lista","Se creará una lista colaborativa con los productos actuales, sin enlaces a tu inventario privado. La copia local se conserva como recuperación; en adelante edita la versión compartida. El historial previo permanece privado.",{publish=null},{access.work{api->val s=api.publishShopping(l,shopping.filter{it.listId==key(l)});selected=null;remote=s.id;invite=s.id}}})}
+    publish?.let{l->Confirm("Compartir esta lista","Se creará una lista colaborativa con los productos actuales, sin enlaces a tu inventario privado. La copia local se conserva como recuperación; en adelante edita la versión compartida. El historial previo permanece privado.",{publish=null},{access.work{api->val s=api.publishShopping(l,shopping.filter{it.listId==key(l)});selected=null;remote=s.id;invite=s.id}})}
     invite?.let{id->shared.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
 
@@ -214,8 +216,8 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     }
     if(create)CollectionNameDialog("Nuevo hogar",{create=false},{model.save(Home(name=it))})
     if(createFurniture&&current?.cloud!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=current.cloud.sourceId),{createFurniture=false},{f->access.work{it.addFurniture(requireNotNull(current.cloud),f)};createFurniture=false})
-    if(publishHome&&current?.local!=null)Confirm("Compartir hogar","Se publicarán todos los muebles y su contenido de este hogar, sin fotografías privadas. Los originales locales se conservan como recuperación. Quien acepte tendrá acceso a los muebles publicados y a los que añadas al hogar online.",{publishHome=false},{val h=current.local;val fs=furniture.filter{it.homeId==(if(h.id==legacy.id)""else h.id)};access.work{api->val s=api.publishHome(h,fs,inventory);invite=s.id}}})
-    publishFurniture?.let{f->if(current?.local!=null)Confirm("Compartir solo "+f.name,"Se publicará exclusivamente este mueble y su contenido, sin fotos locales. El destinatario verá el nombre del hogar, pero no otros muebles. El original local se conserva como recuperación.",{publishFurniture=null},{val h=current.local;access.work{api->val s=api.publishFurniture(h,f,inventory);privateOpen=false;remote=s.id;invite=s.id}}})}
+    if(publishHome&&current?.local!=null)Confirm("Compartir hogar","Se publicarán todos los muebles y su contenido de este hogar, sin fotografías privadas. Los originales locales se conservan como recuperación. Quien acepte tendrá acceso a los muebles publicados y a los que añadas al hogar online.",{publishHome=false},{val h=current.local;val fs=furniture.filter{it.homeId==(if(h.id==legacy.id)""else h.id)};access.work{api->val s=api.publishHome(h,fs,inventory);invite=s.id}})
+    publishFurniture?.let{f->if(current?.local!=null)Confirm("Compartir solo "+f.name,"Se publicará exclusivamente este mueble y su contenido, sin fotos locales. El destinatario verá el nombre del hogar, pero no otros muebles. El original local se conserva como recuperación.",{publishFurniture=null},{val h=current.local;access.work{api->val s=api.publishFurniture(h,f,inventory);privateOpen=false;remote=s.id;invite=s.id}})}
     invite?.let{id->access.spaces.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
 @Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit){

@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
 let env;
-before(async()=>{env=await initializeTestEnvironment({projectId:'demo-planidroid',firestore:{rules:readFileSync(new URL('../firestore.rules',import.meta.url),'utf8')}})});
+before(async()=>{env=await initializeTestEnvironment({projectId:'demo-planidroid',firestore:{rules:readFileSync(new URL('../firestore.rules',import.meta.url),'utf8')}});await env.withSecurityRulesDisabled(async c=>{for(const uid of ['A','B','C','D'])await setDoc(doc(c.firestore(),'approvedUsers',uid),{enabled:true})})});
 after(async()=>{await env?.cleanup()});
 const user=(uid)=>env.authenticatedContext(uid,{email:`${uid.toLowerCase()}@example.com`,email_verified:true}).firestore();
 test('private: owner only, monotonic version',async()=>{
@@ -43,4 +43,25 @@ test('house membership inherits furniture access; direct furniture sharing does 
  await assertFails(setDoc(sp(c,'spoof'),{...mk('furniture','Spoof','house1'),ownerUid:'C'}));
  await assertSucceeds(deleteDoc(doc(a,'memberships','house1~c@example.com')));
  await assertFails(getDoc(sp(c,'fridge1')));await assertSucceeds(getDoc(sp(b,'fridge1')));
+});
+
+test('approval is manual; unapproved and revoked users cannot read or write application data',async()=>{
+ const x=user('X'), a=user('A');
+ const payload={kind:'TASK',payload:'{}',deleted:false,version:1,updatedAt:serverTimestamp()};
+ await assertSucceeds(getDoc(doc(x,'approvedUsers','X')));
+ await assertFails(setDoc(doc(x,'approvedUsers','X'),{enabled:true}));
+ await assertFails(getDocs(collection(x,'approvedUsers')));
+ await assertFails(getDoc(doc(x,'approvedUsers','A')));
+ await assertFails(setDoc(doc(x,'users/X/records/test'),payload));
+ await assertFails(getDocs(collection(x,'users/X/records')));
+ await assertFails(getDocs(query(collection(x,'sharedSpaces'),where('ownerUid','==','X'))));
+ await assertFails(getDocs(query(collection(x,'memberships'),where('email','==','x@example.com'))));
+ await env.withSecurityRulesDisabled(async c=>setDoc(doc(c.firestore(),'approvedUsers','X'),{enabled:true}));
+ await assertSucceeds(setDoc(doc(x,'users/X/records/test'),payload));
+ await assertFails(getDoc(doc(x,'users/A/records/one')));
+ await env.withSecurityRulesDisabled(async c=>updateDoc(doc(c.firestore(),'approvedUsers','X'),{enabled:false}));
+ await assertFails(getDoc(doc(x,'users/X/records/test')));
+ await assertFails(updateDoc(doc(x,'users/X/records/test'),{...payload,version:2}));
+ await assertFails(getDoc(doc(x,'sharedSpaces','space1')));
+ await assertFails(setDoc(doc(a,'approvedUsers','X'),{enabled:true}));
 });
