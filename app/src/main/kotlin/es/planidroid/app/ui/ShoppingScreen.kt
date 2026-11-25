@@ -73,8 +73,7 @@ import java.time.format.DateTimeFormatter
         scope.launch{
             val reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             try{
-                val image=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){InputImage.fromFilePath(ctx,uri)}
-                draft=if(ai){val bytes=shoppingPhotoBytes(ctx,uri);try{AiConfig.provider(ctx,uid).shoppingText("Transcribe esta lista de compra manuscrita.",bytes)}finally{bytes.fill(0)}}else reader.process(image).await().text.take(16000)
+                draft=if(ai){val bytes=shoppingPhotoBytes(ctx,uri);try{AiConfig.provider(ctx,uid).shoppingText("Transcribe esta lista de compra manuscrita.",bytes)}finally{bytes.fill(0)}}else {val image=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){InputImage.fromFilePath(ctx,uri)};reader.process(image).await().text.take(16000)}
                 if(draft.isBlank())error="No se ha detectado texto. Prueba con mejor luz o escribe los productos."
             }catch(e:CancellationException){throw e}catch(_:Exception){error="No se pudo leer la imagen. Puedes usar reconocimiento sin IA o escribir los productos."}
             finally{reader.close();busy=false;file?.delete();file=null;photoUri=null}

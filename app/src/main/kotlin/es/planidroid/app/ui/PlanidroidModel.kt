@@ -19,7 +19,17 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     private val db=PlanidroidDb.get(app); private val dao=db.records(); private val auth=Cloud.auth(app)
     private val _scope=MutableStateFlow(auth?.currentUser?.uid ?: "local"); val scope=_scope.asStateFlow()
     private val listener=com.google.firebase.auth.FirebaseAuth.AuthStateListener { _scope.value=it.currentUser?.uid ?: "local" }
-    init { auth?.addAuthStateListener(listener); val uid=_scope.value; if(uid!="local")Cloud.schedule(app,uid) }
+    data class Access(val uid:String="local",val verified:Boolean?=null,val allowed:Boolean=false)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val access=scope.flatMapLatest{uid->
+        if(uid=="local")flowOf(Access())else Cloud.observeApproval(app,uid).onStart{emit(null)}.map{server->
+            Access(uid,server,server==true||(server==null&&Cloud.previouslyApproved(app,uid)))
+        }
+    }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(0),Access())
+    val approval=access.map{it.verified}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(0),null)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class,kotlinx.coroutines.FlowPreview::class)
+    private fun watchDirty(){viewModelScope.launch{scope.flatMapLatest{uid->if(uid=="local")flowOf(uid to emptyList<Record>())else dao.observeDirty(uid).map{uid to it}}.debounce(1500).collect{(uid,dirty)->if(dirty.isNotEmpty()&&Cloud.previouslyApproved(app,uid)){Cloud.dirtyChanged(app,uid)}}}}
+    init { auth?.addAuthStateListener(listener);watchDirty() }
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val rows=scope.flatMapLatest { dao.observe(it) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -95,8 +105,31 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         db.withTransaction { for(e in entries) { if(dao.get(s,e.id)==null) { dao.save(s,e.id,e.kind.name,e.payload); count++ } } }
         entries.filter{it.kind==Kind.TASK}.forEach{e->dao.get(s,e.id)?.takeUnless{it.deleted}?.let{Reminders.update(getApplication(),s,decode<Task>(it.payload))}};setting(b.theme,b.glass);message.value="Importados $count de ${entries.size} elementos. Los existentes no se sobrescriben."
     } }
-    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.stop(getApplication(),uid); try { val allowed=Cloud.registerApproval(getApplication(),uid); if(scope.value==uid){syncState.value=if(allowed)"Cuenta autorizada. Lista para sincronizar." else "Pendiente de autorización";if(allowed)Cloud.schedule(getApplication(),uid)} } catch(e:CancellationException){throw e}catch(e:Exception){if(scope.value==uid){syncState.value="No se pudo comprobar la autorización";message.value=approvalError(e)}} } finally { busy.value=false } } }
-    fun logout() { Cloud.stop(getApplication(),scope.value); auth?.signOut(); syncState.value="Sin sincronizar" }
+    fun login(context: Context) { run { busy.value=true;try{Cloud.login(context);val uid=auth?.currentUser?.uid?:return@run;_scope.value=uid;register(uid)}finally{busy.value=false} } }
+    private suspend fun register(uid:String){
+        try{val allowed=Cloud.registerApproval(getApplication(),uid);if(scope.value==uid){syncState.value=if(allowed)"Cuenta autorizada" else "Pendiente de autorización";if(allowed){Cloud.schedule(getApplication(),uid);Cloud.dirtyChanged(getApplication(),uid)}}}
+        catch(e:CancellationException){throw e}catch(e:Exception){if(scope.value==uid){syncState.value="No se pudo comprobar la autorización";message.value=approvalError(e)}}
+    }
+    fun retryApproval(){val uid=scope.value;if(uid!="local"&&!busy.value)run{busy.value=true;try{register(uid)}finally{busy.value=false}}}
+    fun resumeSync(uid:String){if(scope.value==uid&&Cloud.previouslyApproved(getApplication(),uid)){Cloud.schedule(getApplication(),uid);Cloud.refreshOnOpen(getApplication(),uid)}}
+    fun createManualEvent(title:String,start:Long,end:Long,reminder:Boolean){val uid=scope.value;run{
+        require(uid!="local"&&Cloud.previouslyApproved(getApplication(),uid))
+        require(title.isNotBlank()&&end>start&&end-start<=86_400_000)
+        val task=Task(title=title.trim(),due=sessionDate(start).toString(),minutes=((end-start)/60_000).toInt(),reminder=reminder,reminderTime=time(start))
+        val session=Session(taskId=task.id,start=start,end=end,calendarTitle=task.title)
+        db.withTransaction{
+            require(dao.all(uid).filter{it.kind==Kind.SESSION.name&&!it.deleted}.map{decode<Session>(it.payload)}.none{it.start<end&&it.end>start}&&es.planidroid.app.sync.CalendarSync.events(getApplication(),uid).none{it.busy&&it.start<end&&it.end>start}){"Hay otro evento en ese horario"}
+            dao.save(uid,task.id,Kind.TASK.name,encode(task));dao.save(uid,session.id,Kind.SESSION.name,encode(session))
+        }
+        Reminders.update(getApplication(),uid,task);SessionReminders.schedule(getApplication(),uid,session)
+    }}
+    fun importGuestData(){val uid=scope.value;if(uid=="local")return;run{
+        require(Cloud.previouslyApproved(getApplication(),uid))
+        val entries=dao.all("local").filterNot{it.deleted}
+        db.withTransaction{for(row in entries)if(dao.get(uid,row.id)==null)dao.save(uid,row.id,row.kind,row.payload)}
+        message.value="Datos del modo invitado copiados a esta cuenta; los originales se conservan."
+    }}
+    fun logout() { val uid=scope.value;Cloud.recordApproval(getApplication(),uid,false);runCatching{es.planidroid.app.sync.PersonalGeminiKey.remove(getApplication(),uid)};auth?.signOut();_scope.value="local";syncState.value="Sin sincronizar" }
     val automaticSync=scope.map{uid->uid!="local"&&Cloud.automatic(app,uid)}.stateIn(viewModelScope,SharingStarted.Eagerly,false)
     private val _automaticOverride=MutableStateFlow<Pair<String,Boolean>?>(null)
     val autoSyncEnabled=combine(scope,automaticSync,_automaticOverride){uid,auto,override->override?.takeIf{it.first==uid}?.second?:auto}.stateIn(viewModelScope,SharingStarted.Eagerly,false)
@@ -109,9 +142,9 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     private fun approvalError(e:Exception):String=if(e is com.google.firebase.firestore.FirebaseFirestoreException && e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Firestore deniega el acceso. Comprueba que las reglas de Planidroid estén publicadas en el proyecto correcto y que el UID coincida." else e.localizedMessage?:"Sin conexión"
     fun sync() { val s=scope.value; if(s=="local"||busy.value) return; busy.value=true;run {
         syncState.value="Sincronizando…"
-        try { if(!Cloud.registerApproval(getApplication(),s))throw Cloud.ApprovalRequired();Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
+        try { Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
         catch(e: CancellationException) { throw e }
-        catch(e:Cloud.ApprovalRequired){Cloud.setAutomatic(getApplication(),s,false);_automaticOverride.value=s to false;syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
+        catch(e:Cloud.ApprovalRequired){Cloud.recordApproval(getApplication(),s,false);_automaticOverride.value=s to false;syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
         catch(e:Exception) { syncState.value="Error o conflicto"; message.value=approvalError(e) }
         finally{busy.value=false}
     } }

@@ -39,7 +39,7 @@ import kotlinx.coroutines.CancellationException
     var keyConfigured by remember(uid){mutableStateOf(AiConfig.configured(ctx,uid))}
     var detail by remember(uid){mutableStateOf("")}
     var syncOpen by remember(uid){mutableStateOf(false)}
-    val auto by model.autoSyncEnabled.collectAsStateWithLifecycle()
+    val health by remember(uid){ServiceHealth.observe(ctx,uid,"firestore")}.collectAsStateWithLifecycle(initialValue=false)
     val sync by model.syncState.collectAsStateWithLifecycle()
     LaunchedEffect(uid,approval){
         dbOk=false
@@ -49,7 +49,7 @@ import kotlinx.coroutines.CancellationException
     LaunchedEffect(uid){if(uid!="local")CalendarSync.verifyConnection(ctx,uid)}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
         GlassCard{
-            Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Sin verificar"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
+            Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Autorizado · sin conexión"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
             if(uid=="local")Button(enabled=!busy,onClick={online("conectar tu cuenta")}){Text("Iniciar sesión con Google")}
             else TextButton(onClick={logout=true}){Text("Cerrar sesión")}
         }
@@ -57,7 +57,7 @@ import kotlinx.coroutines.CancellationException
             Text("Servicios",style=MaterialTheme.typography.titleLarge)
             ServiceRow("Google",uid!="local")
             HorizontalDivider()
-            ServiceRow("Sincronización",uid!="local"&&approval==true&&dbOk,if(uid!="local")"Pulsa para sincronizar" else ""){if(uid=="local")online("sincronizar")else syncOpen=true}
+            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(uid!="local")"Pulsa para sincronizar" else ""){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
             ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()
@@ -67,5 +67,5 @@ import kotlinx.coroutines.CancellationException
     if(geminiOpen)PersonalGeminiDialog(uid,{geminiOpen=false;keyConfigured=AiConfig.configured(ctx,uid)})
     if(calendarOpen)AlertDialog(onDismissRequest={calendarOpen=false},title={Text("Google Calendar")},text={Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())){CalendarSettings(model,uid)}},confirmButton={TextButton(onClick={calendarOpen=false}){Text("Cerrar")}})
     if(syncOpen)AlertDialog(onDismissRequest={syncOpen=false},title={Text("Sincronización")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(sync);Button(enabled=!busy,onClick={model.sync()}){Text("Sincronizar ahora")};Row(verticalAlignment=Alignment.CenterVertically){Text("Sincronización automática · cambios pendientes al recuperar conexión",Modifier.weight(1f))}}},confirmButton={TextButton(onClick={syncOpen=false}){Text("Cerrar")}})
-    if(logout)Confirm("Cerrar sesión","Tus datos locales se conservan.",{logout=false},{model.logout()})
+    if(logout)Confirm("Cerrar sesión","Tus datos locales se conservan. La clave personal de Gemini se elimina de este dispositivo.",{logout=false},{model.logout()})
 }
