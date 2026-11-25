@@ -16,8 +16,8 @@ android {
         applicationId = "es.planidroid.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.1.1.6"
+        versionCode = 17
+        versionName = "0.1.1.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

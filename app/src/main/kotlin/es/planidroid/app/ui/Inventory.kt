@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -52,15 +53,94 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
     editing?.let{m->FurnitureEditor(m,{editing=null},{model.save(it);editing=null})};itemEdit?.let{i->furniture.find{it.id==i.furnitureId}?.let{m->ItemEditor(i,m,{itemEdit=null},{model.save(it);itemEdit=null})}};if(zoneEdit&&f!=null)LayoutEditor(f,inventory.filter{it.furnitureId==f.id},{zoneEdit=false},{model.save(it);zoneEdit=false;chosen=null});if(scan&&f!=null)PhotoScan(f,chosen?:f.compartments.firstOrNull()?:"General",{scan=false},{items->items.forEach{model.save(it)};scan=false});removeFurniture?.let{m->Confirm("Eliminar ${m.name}","Se eliminará también su contenido.",{removeFurniture=null},{model.delete(m.id,Kind.FURNITURE);selected=null})};removeItem?.let{i->Confirm("Eliminar ${i.name}","Se quitará del inventario.",{removeItem=null},{model.delete(i.id,Kind.ITEM)})}
 }
 @Composable fun ZoneBoard(zones:List<Zone>,items:List<Item>,editing:Boolean,selected:String?,tap:(Zone)->Unit,move:(Zone)->Unit){
-    BoxWithConstraints(Modifier.fillMaxWidth().height(288.dp).clip(RoundedCornerShape(18.dp)).background(soft(Mint,.08f)).border(1.dp,soft(Mint,.30f),RoundedCornerShape(18.dp))){val cellW=maxWidth/4;val cellH=36.dp
-        zones.forEach{z->key(z.name){var dx by remember(z){mutableFloatStateOf(0f)};var dy by remember(z){mutableFloatStateOf(0f)};val drag=if(editing)Modifier.pointerInput(z,zones){detectDragGesturesAfterLongPress(onDragStart={dx=0f;dy=0f},onDragCancel={dx=0f;dy=0f},onDragEnd={val candidate=z.copy(x=z.x+(dx/(size.width.toFloat()/z.w)).roundToInt(),y=z.y+(dy/(size.height.toFloat()/z.h)).roundToInt());dx=0f;dy=0f;move(candidate)}){change,delta->change.consume();dx+=delta.x;dy+=delta.y}}else Modifier
+    BoxWithConstraints(Modifier.fillMaxWidth().height(288.dp).clip(RoundedCornerShape(18.dp)).background(soft(Mint,.08f)).border(1.dp,soft(Mint,.30f),RoundedCornerShape(18.dp))){val cellW=maxWidth/LayoutGrid.WIDTH;val cellH=36.dp
+        val cellWidthPx=with(LocalDensity.current){cellW.toPx()};val cellHeightPx=with(LocalDensity.current){cellH.toPx()}
+        zones.forEach{z->key(z.name){var dx by remember(z){mutableFloatStateOf(0f)};var dy by remember(z){mutableFloatStateOf(0f)};val drag=if(editing)Modifier.pointerInput(z,zones,cellWidthPx,cellHeightPx){detectDragGesturesAfterLongPress(onDragStart={dx=0f;dy=0f;tap(z)},onDragCancel={dx=0f;dy=0f},onDragEnd={val candidate=z.copy(x=z.x+(dx/cellWidthPx).roundToInt(),y=z.y+(dy/cellHeightPx).roundToInt());dx=0f;dy=0f;move(candidate)}){change,delta->change.consume();dx+=delta.x;dy+=delta.y}}else Modifier
             val inside=items.filter{it.compartment==z.name};Surface(Modifier.offset(cellW*z.x,cellH*z.y).offset{IntOffset(dx.roundToInt(),dy.roundToInt())}.size(cellW*z.w,cellH*z.h).padding(2.dp).then(drag).clickable{tap(z)},shape=RoundedCornerShape(if(z.type==ZoneType.DRAWER)5.dp else 10.dp),color=soft(if(z.type==ZoneType.DRAWER)Blue else Mint,if(selected==z.name).36f else .19f),border=BorderStroke(1.dp,soft(Mint,.42f))){Column(Modifier.padding(horizontal=4.dp,vertical=2.dp),verticalArrangement=Arrangement.Center){Text(z.name,style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis);if(inside.isNotEmpty())Text(inside.take(5).joinToString(""){it.icon},style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Clip)}}
         }};if(zones.isEmpty())Text("Sin zonas",Modifier.align(Alignment.Center),style=MaterialTheme.typography.labelSmall)
     }
 }
-@Composable fun LayoutEditor(f:Furniture,items:List<Item>,close:()->Unit,save:(Furniture)->Unit){var zones by remember{mutableStateOf(LayoutGrid.zones(f))};var sel by remember{mutableStateOf<String?>(null)};var name by remember{mutableStateOf("")};var door by remember{mutableStateOf(false)};var type by remember{mutableStateOf(ZoneType.SHELF)};var err by remember{mutableStateOf("")};val z=zones.find{it.name==sel};fun move(n:Zone){if(LayoutGrid.fits(n,zones)){zones=zones.map{if(it.name==n.name)n else it};err=""}else err="Ese espacio no está libre o supera el mueble."}
-    androidx.compose.ui.window.Dialog(onDismissRequest=close,properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)){Surface(Modifier.fillMaxSize()){LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Section("Diseña tu mueble","Mantén pulsado y arrastra. Toca para ajustar tamaño.");Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Column(Modifier.weight(1f)){Text("Interior");ZoneBoard(zones.filterNot{it.door},items,true,sel,{sel=it.name},::move)};Column(Modifier.weight(1f)){Text("Puerta");ZoneBoard(zones.filter{it.door},items,true,sel,{sel=it.name},::move)}};if(err.isNotBlank())Text(err,color=MaterialTheme.colorScheme.error)};item{z?.let{a->GlassCard(tint=Mint){Text(a.name,style=MaterialTheme.typography.titleMedium);Choice("Tipo",ZoneType.entries,a.type,{it.label}){move(a.copy(type=it))};Row{TextButton(onClick={move(a.copy(w=(a.w-1).coerceAtLeast(1)))}){Text("− ancho")};TextButton(onClick={move(a.copy(w=a.w+1))}){Text("+ ancho")};TextButton(onClick={move(a.copy(h=(a.h-1).coerceAtLeast(1)))}){Text("− alto")};TextButton(onClick={move(a.copy(h=a.h+1))}){Text("+ alto")}};Row{TextButton(onClick={move(a.copy(x=a.x-1))}){Text("←")};TextButton(onClick={move(a.copy(x=a.x+1))}){Text("→")};TextButton(onClick={move(a.copy(y=a.y-1))}){Text("↑")};TextButton(onClick={move(a.copy(y=a.y+1))}){Text("↓")}};TextButton(onClick={move(a.copy(door=!a.door))}){Text("Mover a ${if(a.door)"interior" else "puerta"}")};TextButton(enabled=items.none{it.compartment==a.name}&&zones.size>1,onClick={zones=zones.filterNot{it.name==a.name};sel=null}){Text("Quitar zona vacía")}}}};item{GlassCard{Text("Nueva zona",style=MaterialTheme.typography.titleMedium);Field(name,{name=it},"Nombre");Choice("Tipo",ZoneType.entries,type,{it.label}){type=it};Row(verticalAlignment=Alignment.CenterVertically){Switch(door,{door=it});Text(" En la puerta")};Button(enabled=name.isNotBlank()&&zones.none{it.name.equals(name.trim(),true)},onClick={val n=LayoutGrid.place(name.trim(),type,door,zones,if(type==ZoneType.BASKET)2 else 4,if(type==ZoneType.DRAWER)2 else 1);if(n==null)err="No queda espacio para esa zona."else{zones=zones+n;sel=n.name;name="";err=""}}){Text("Añadir compartimento")}}};item{Button(modifier=Modifier.fillMaxWidth(),onClick={save(f.copy(zones=zones,compartments=(zones.map{it.name}+items.map{it.compartment}).distinct()))}){Text("Guardar distribución")};TextButton(onClick=close){Text("Cancelar")}}}}}
+@Composable private fun ZoneDimension(label:String,value:Int,limit:Int,canDecrease:Boolean,canIncrease:Boolean,change:(Int)->Unit){
+    Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface){
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){
+                Text(label,style=MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement=Arrangement.spacedBy(3.dp)){
+                    repeat(limit){index->Box(Modifier.weight(1f).height(5.dp).background(if(index<value)Mint else soft(Mint,.12f),RoundedCornerShape(3.dp)))}
+                }
+            }
+            OutlinedIconButton(enabled=canDecrease,onClick={change(value-1)}){Icon(Icons.Default.Remove,"Reducir "+label.lowercase())}
+            Text(value.toString(),style=MaterialTheme.typography.titleLarge,modifier=Modifier.width(24.dp),textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+            FilledTonalIconButton(enabled=canIncrease,onClick={change(value+1)}){Icon(Icons.Default.Add,"Aumentar "+label.lowercase())}
+        }
+    }
 }
-@Composable fun FurnitureEditor(initial:Furniture,close:()->Unit,save:(Furniture)->Unit){var f by remember(initial){mutableStateOf(initial)};val ctx=LocalContext.current;val photo=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){u->if(u!=null){runCatching{ctx.contentResolver.takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION)};f=f.copy(photo=u.toString())}};AlertDialog(onDismissRequest=close,title={Text("Mueble o electrodoméstico")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Field(f.name,{f=f.copy(name=it)},"Nombre");Choice("Tipo",FurnitureType.entries,f.type,{it.label}){f=f.copy(type=it)};if(f.photo.isNotBlank())LocalPhoto(f.photo,Modifier.fillMaxWidth().height(130.dp))else FurnitureGlyph(f.type,Modifier.size(72.dp).align(Alignment.CenterHorizontally));TextButton(onClick={photo.launch(arrayOf("image/*"))}){Text("Seleccionar fotografía real")};Field(f.room,{f=f.copy(room=it)},"Estancia");Field(f.notes,{f=f.copy(notes=it)},"Notas",false)}},confirmButton={TextButton(enabled=f.name.isNotBlank(),onClick={val z=if(initial.name.isBlank()&&f.type==FurnitureType.FRIDGE)listOf(Zone("Balda superior",y=0,h=2),Zone("Balda central",y=2,h=2),Zone("Cajón verduras",ZoneType.DRAWER,y=4,h=2),Zone("Puerta superior",door=true,y=0,h=2),Zone("Botellero",ZoneType.RACK,door=true,y=3,h=2))else LayoutGrid.zones(f);save(f.copy(name=f.name.trim(),zones=z,compartments=z.map{it.name}))}){Text("Guardar")}},dismissButton={TextButton(onClick=close){Text("Cancelar")}})}
+
+@Composable fun LayoutEditor(f:Furniture,items:List<Item>,close:()->Unit,save:(Furniture)->Unit){
+    var zones by remember(f.id){mutableStateOf(LayoutGrid.zones(f))}
+    var sel by remember(f.id){mutableStateOf<String?>(null)}
+    var type by remember(f.id){mutableStateOf(ZoneType.SHELF)}
+    var customName by remember(f.id){mutableStateOf<String?>(null)}
+    var door by remember(f.id){mutableStateOf(false)}
+    var err by remember(f.id){mutableStateOf("")}
+    val defaultName=LayoutGrid.defaultName(type,zones)
+    val name=customName?:defaultName
+    val z=zones.find{it.name==sel}
+    fun move(n:Zone){
+        if(LayoutGrid.fits(n,zones)){zones=zones.map{if(it.name==n.name)n else it};err=""}
+        else err="Ese espacio no está libre o supera el mueble."
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest=close,properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)){
+        Surface(Modifier.fillMaxSize()){
+            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
+                item{
+                    Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Diseña tu mueble",style=MaterialTheme.typography.headlineMedium);Text(f.name,color=MaterialTheme.colorScheme.onSurfaceVariant)};IconButton(onClick=close){Icon(Icons.Default.Close,"Cerrar")}}
+                    Text("Mantén pulsada una zona y arrástrala. Toca para cambiar su tamaño.",style=MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                        Column(Modifier.weight(1f)){Text("Interior",style=MaterialTheme.typography.titleMedium);Spacer(Modifier.height(6.dp));ZoneBoard(zones.filterNot{it.door},items,true,sel,{sel=it.name;err=""},::move)}
+                        Column(Modifier.weight(1f)){Text("Puerta",style=MaterialTheme.typography.titleMedium);Spacer(Modifier.height(6.dp));ZoneBoard(zones.filter{it.door},items,true,sel,{sel=it.name;err=""},::move)}
+                    }
+                    if(err.isNotBlank())Text(err,color=MaterialTheme.colorScheme.error)
+                }
+                item{
+                    z?.let{a->
+                        GlassCard(tint=Mint){
+                            Text(a.name,style=MaterialTheme.typography.titleLarge)
+                            Choice("Tipo",ZoneType.entries,a.type,{it.label}){move(a.copy(type=it))}
+                            Text("Tamaño",style=MaterialTheme.typography.titleMedium)
+                            ZoneDimension("Ancho",a.w,LayoutGrid.WIDTH,LayoutGrid.fits(a.copy(w=a.w-1),zones),LayoutGrid.fits(a.copy(w=a.w+1),zones)){move(a.copy(w=it))}
+                            ZoneDimension("Alto",a.h,LayoutGrid.HEIGHT,LayoutGrid.fits(a.copy(h=a.h-1),zones),LayoutGrid.fits(a.copy(h=a.h+1),zones)){move(a.copy(h=it))}
+                            HorizontalDivider()
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Text("Ubicación: "+if(a.door)"puerta" else "interior",Modifier.weight(1f))
+                                TextButton(onClick={move(a.copy(door=!a.door))},enabled=LayoutGrid.fits(a.copy(door=!a.door),zones)){Text(if(a.door)"Interior" else "Puerta")}
+                            }
+                            TextButton(enabled=items.none{it.compartment==a.name}&&zones.size>1,onClick={zones=zones.filterNot{it.name==a.name};sel=null;err=""}){Text("Quitar zona vacía",color=if(items.none{it.compartment==a.name}&&zones.size>1)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)}
+                        }
+                    }
+                }
+                item{
+                    GlassCard{
+                        Text("Nueva zona",style=MaterialTheme.typography.titleLarge)
+                        Choice("Tipo",ZoneType.entries,type,{it.label}){type=it;err=""}
+                        Field(name,{customName=it.take(80)},"Nombre")
+                        if(customName!=null)TextButton(onClick={customName=null}){Text("Usar nombre del tipo")}
+                        Row(verticalAlignment=Alignment.CenterVertically){Switch(door,{door=it});Text(" En la puerta")}
+                        Button(enabled=name.isNotBlank()&&zones.none{it.name.equals(name.trim(),true)},modifier=Modifier.fillMaxWidth(),onClick={
+                            val n=LayoutGrid.place(name.trim(),type,door,zones,if(type==ZoneType.BASKET)2 else 4,if(type==ZoneType.DRAWER)2 else 1)
+                            if(n==null)err="No queda espacio para esa zona." else{zones=zones+n;sel=n.name;customName=null;err=""}
+                        }){Icon(Icons.Default.Add,null);Text(" Añadir zona")}
+                    }
+                }
+                item{
+                    Button(modifier=Modifier.fillMaxWidth(),onClick={save(f.copy(zones=zones,compartments=(zones.map{it.name}+items.map{it.compartment}).distinct()))}){Text("Guardar distribución")}
+                    TextButton(onClick=close,modifier=Modifier.fillMaxWidth()){Text("Cancelar")}
+                }
+            }
+        }
+    }
+}
+@Composable fun FurnitureEditor(initial:Furniture,close:()->Unit,save:(Furniture)->Unit){var f by remember(initial){mutableStateOf(initial)};val ctx=LocalContext.current;val photo=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){u->if(u!=null){runCatching{ctx.contentResolver.takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION)};f=f.copy(photo=u.toString())}};AlertDialog(onDismissRequest=close,title={Text("Mueble o electrodoméstico")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Field(f.name,{f=f.copy(name=it)},"Nombre");Choice("Tipo",FurnitureType.entries,f.type,{it.label}){f=f.copy(type=it)};if(f.photo.isNotBlank())LocalPhoto(f.photo,Modifier.fillMaxWidth().height(130.dp))else FurnitureGlyph(f.type,Modifier.size(72.dp).align(Alignment.CenterHorizontally));TextButton(onClick={photo.launch(arrayOf("image/*"))}){Text("Seleccionar fotografía real")};Field(f.room,{f=f.copy(room=it)},"Estancia");Field(f.notes,{f=f.copy(notes=it)},"Notas",false)}},confirmButton={TextButton(enabled=f.name.isNotBlank(),onClick={val z=if(initial.name.isBlank()&&f.type==FurnitureType.FRIDGE)listOf(Zone("Balda",y=0,h=2),Zone("Balda 2",y=2,h=2),Zone("Cajón",ZoneType.DRAWER,y=4,h=2),Zone("Balda 3",door=true,y=0,h=2),Zone("Botellero",ZoneType.RACK,door=true,y=3,h=2))else if(initial.name.isBlank()&&f.zones.isEmpty()&&f.compartments==listOf("General"))listOf(Zone(ZoneType.SHELF.label))else LayoutGrid.zones(f);save(f.copy(name=f.name.trim(),zones=z,compartments=z.map{it.name}))}){Text("Guardar")}},dismissButton={TextButton(onClick=close){Text("Cancelar")}})}
 @Composable fun ItemEditor(initial:Item,f:Furniture,close:()->Unit,save:(Item)->Unit){var i by remember(initial){mutableStateOf(initial)};var qty by remember{mutableStateOf(amountText(i.amount))};val ctx=LocalContext.current;val photo=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){u->if(u!=null){runCatching{ctx.contentResolver.takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION)};i=i.copy(photo=u.toString())}};val n=qty.replace(',','.').toDoubleOrNull();val valid=i.name.isNotBlank()&&n!=null&&n.isFinite()&&n>=0&&(i.expiry.isBlank()||runCatching{LocalDate.parse(i.expiry)}.isSuccess);AlertDialog(onDismissRequest=close,title={Text("Contenido de ${f.name}")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Field(i.name,{i=i.copy(name=it,icon=guessIcon(it))},"Producto u objeto");Choice("Compartimento",(f.compartments+i.compartment).distinct(),i.compartment,{it}){i=i.copy(compartment=it)};Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(3.dp)){productIcons.forEach{icon->FilterChip(i.icon==icon,{i=i.copy(icon=icon)},label={Text(icon)})}};Field(qty,{qty=it},"Cantidad numérica");Field(i.unit,{i=i.copy(unit=it)},"Unidad (ud, kg, l…)");DateField(i.expiry,{i=i.copy(expiry=it)},"Caducidad");Field(i.notes,{i=i.copy(notes=it)},"Notas",false);if(i.photo.isNotBlank())LocalPhoto(i.photo,Modifier.fillMaxWidth().height(100.dp));TextButton(onClick={photo.launch(arrayOf("image/*"))}){Text("Añadir fotografía")}}},confirmButton={TextButton(enabled=valid,onClick={save(i.copy(name=i.name.trim(),amount=n!!,quantity=amountText(n)))}){Text("Guardar")}},dismissButton={TextButton(onClick=close){Text("Cancelar")}})}
 @Composable fun PhotoScan(f:Furniture,comp:String,close:()->Unit,save:(List<Item>)->Unit){val ctx=LocalContext.current;val scope=rememberCoroutineScope();var text by remember{mutableStateOf("")};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var photo by remember{mutableStateOf("")};fun detect(input:InputImage){scope.launch{busy=true;error="";val labeler=ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS);val reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);try{val labels=labeler.process(input).await().filter{it.confidence>=.6f}.map{it.text};val ocr=reader.process(input).await().text.lines().filter{it.isNotBlank()}.take(12);text=(labels+ocr).distinct().joinToString("\n");if(text.isBlank())error="No se identificó contenido. Puedes escribirlo manualmente."}catch(e:CancellationException){throw e}catch(e:Exception){error="No se pudo analizar la imagen."}finally{labeler.close();reader.close();busy=false}}};val pick=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){u->if(u!=null){photo=u.toString();runCatching{InputImage.fromFilePath(ctx,u)}.onSuccess{detect(it)}.onFailure{error="Imagen no disponible"}}};val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()){b->if(b!=null)detect(InputImage.fromBitmap(b,0))};AlertDialog(onDismissRequest=close,title={Text("Reconocer contenido")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Análisis local de etiquetas visuales y texto. No identifica con certeza todos los alimentos ni sus cantidades. Edita las propuestas, una por línea.");Row{TextButton(onClick={pick.launch(arrayOf("image/*"))}){Text("Galería")};TextButton(onClick={runCatching{camera.launch(null)}.onFailure{error="Cámara no disponible"}}){Text("Cámara")}};if(photo.isNotBlank())LocalPhoto(photo,Modifier.fillMaxWidth().height(140.dp));if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());Field(text,{text=it},"Revisar productos",false);if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)}},confirmButton={TextButton(enabled=!busy&&text.isNotBlank(),onClick={save(text.lines().map{it.trim()}.filter{it.isNotBlank()}.distinct().map{Item(furnitureId=f.id,name=it,compartment=comp,icon=guessIcon(it))})}){Text("Confirmar contenido")}},dismissButton={TextButton(onClick=close){Text("Cancelar")}})}
