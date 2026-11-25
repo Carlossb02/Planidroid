@@ -19,10 +19,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineScope){
-    var spaces by mutableStateOf(emptyList<SharedSpace>());private set
-    var invites by mutableStateOf(emptyList<Membership>());private set
-    var busy by mutableStateOf(false);private set
-    var error by mutableStateOf("");private set
+    var spaces by mutableStateOf(emptyList<SharedSpace>())
+        private set
+    var invites by mutableStateOf(emptyList<Membership>())
+        private set
+    var busy by mutableStateOf(false)
+        private set
+    var error by mutableStateOf("")
+        private set
     fun work(action:suspend (SharedCloud)->Unit={}){
         val cloud=api?:return
         if(busy)return
