@@ -3,13 +3,13 @@ import kotlinx.serialization.Serializable
 import java.time.*
 import java.text.Normalizer
 
-@Serializable data class PlanHints(val dailyMinutes:Int=0,val excludedWeekdays:List<Int> = emptyList(),val suggestedMinutes:Int=0,val explanation:String="")
+@Serializable data class PlanHints(val dailyMinutes:Int=0,val excludedWeekdays:List<Int> = emptyList(),val suggestedMinutes:Int=0,val explanation:String="",val daysPerWeek:Int=0,val availableWeekdays:List<Int> = emptyList(),val minutesPerTopic:Int=0,val topicCount:Int=0,val finishBeforeDeadline:Boolean=false,val windowStart:String="",val windowEnd:String="",val sessionLimit:Int=60)
 
 object SmartCapture {
     private fun normalize(s:String)=Normalizer.normalize(s.lowercase(),Normalizer.Form.NFD).replace(Regex("\\p{M}+"),"")
     private val number="(\\d{1,4}(?:[.,]\\d{1,2})?|una?|dos|tres|cuatro|cinco|seis|media)"
     private val duration=Regex("\\b$number\\s*(horas?|h|minutos?|min)\\b")
-    private val repeat=Regex("^\\s*(al dia|cada dia|por dia|diari[ao]s?|todos los dias|a la semana|por semana|cada semana)")
+    private val repeat=Regex("^\\s*(al dia|cada dia|por dia|diari[ao]s?|todos los dias|a la semana|por semana|cada semana|por tema|cada tema|para cada tema|el tema|/tema)")
     private fun minutes(m:MatchResult):Int {
         val n=m.groupValues[1].replace(',','.').toDoubleOrNull() ?: mapOf("un" to 1.0,"una" to 1.0,"dos" to 2.0,"tres" to 3.0,"cuatro" to 4.0,"cinco" to 5.0,"seis" to 6.0,"media" to .5).getOrDefault(m.groupValues[1],0.0)
         return (n*(if(m.groupValues[2].startsWith("h"))60 else 1)).toInt().coerceIn(0,100000)
@@ -23,11 +23,15 @@ object SmartCapture {
         if(Regex("(?:excepto|sin|descansar|no (?:puedo|trabajar|estudiar))[^.;,]{0,35}fin(?:es)? de semana").containsMatchIn(s))exclusions.addAll(listOf(6,7))
         val deadline=runCatching{LocalDate.parse(due)}.getOrNull()
         val days=if(deadline!=null && deadline>=today && deadline<=today.plusDays(366)) (0..java.time.temporal.ChronoUnit.DAYS.between(today,deadline)).count{today.plusDays(it).dayOfWeek.value !in exclusions} else 0
-        val topics=Regex("\\b(\\d{1,3})\\s+temas\\b").find(s)?.groupValues?.get(1)?.toIntOrNull()
+        val topics=StudyIntent.topicCount(text)
+        val perTopic=StudyIntent.perTopic(text)
+        val weekly=StudyIntent.weeklyCount(text)?:0
+        val named=StudyIntent.namedDays(text)
+        val exam=StudyIntent.examTitle(text,due)!=null
         val explicit=totalMinutes(text)
-        val estimate=when { explicit>0->0;topics!=null->(topics*45).coerceAtMost(100000);daily>0&&days>0->(daily*days).coerceAtMost(100000);deadline!=null&&Regex("\\b(estudiar|examen|preparar|repasar)\\b").containsMatchIn(s)->120;else->0 }
-        val reason=when { explicit>0->"";topics!=null->"Estimación orientativa: 45 min por tema. Ajusta si necesitas más.";daily>0&&days>0->"Propuesta: $daily min por día disponible hasta la fecha límite.";estimate>0->"Estimación inicial de 2 h, pendiente de confirmar.";else->"" }
-        return PlanHints(daily,exclusions.sorted(),estimate,reason)
+        val estimate=when { explicit>0->0;perTopic>0&&topics!=null->(perTopic.toLong()*topics).coerceAtMost(100000).toInt();perTopic>0->0;topics!=null->(topics*45).coerceAtMost(100000);daily>0&&days>0->(daily*days).coerceAtMost(100000);deadline!=null&&Regex("\\b(estudiar|examen|preparar|repasar)\\b").containsMatchIn(s)->120;else->0 }
+        val reason=when { explicit>0->"";perTopic>0&&topics==null->"Falta el número de temas para calcular el tiempo total.";perTopic>0->"Tiempo calculado a partir del número de temas y la duración por tema.";topics!=null->"Estimación orientativa: 45 min por tema. Ajusta si necesitas más.";daily>0&&days>0->"Propuesta: $daily min por día disponible hasta la fecha límite.";estimate>0->"Estimación inicial de 2 h, pendiente de confirmar.";else->"" }
+        return PlanHints(daily,exclusions.sorted(),estimate,reason,if(named.isNotEmpty())named.size else weekly,named.map{it.value}.sorted(),perTopic,topics?:0,exam)
     }
 }
 object SmartPlan {

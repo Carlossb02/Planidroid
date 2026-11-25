@@ -64,6 +64,8 @@ import kotlinx.coroutines.launch
                                 if(task.minutes>0) Text("${task.minutes} min",style=MaterialTheme.typography.labelLarge)
                                 if(task.phases.isNotEmpty()) Text("${task.phases.size} fases",style=MaterialTheme.typography.labelLarge)
                             }
+                            if(task.planHints.daysPerWeek>0) Text("Disponibilidad: "+task.planHints.daysPerWeek+" días por semana",style=MaterialTheme.typography.bodySmall)
+                            if(task.planHints.minutesPerTopic>0) Text("Por tema: "+task.planHints.minutesPerTopic+" min",style=MaterialTheme.typography.bodySmall)
                             if(task.minutes==0&&task.planHints.explanation.isNotBlank()) Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
                             if(task.planHints.dailyMinutes>0) Text("Máximo diario: "+task.planHints.dailyMinutes+" min",style=MaterialTheme.typography.bodySmall)
                             task.phases.take(8).forEach{Text("• ${it.title}",style=MaterialTheme.typography.bodyMedium)}
@@ -74,8 +76,13 @@ import kotlinx.coroutines.launch
                     } }
                     val tasks=draft.orEmpty()
                     val valid=!submitted&&tasks.isNotEmpty()&&tasks.all{it.title.isNotBlank()&&(it.category!=Category.DEADLINE||it.due.isNotBlank())&&(it.due.isBlank()||runCatching{java.time.LocalDate.parse(it.due)}.isSuccess)}
-                    Button(enabled=valid,onClick={submitted=true;save(tasks)},modifier=Modifier.fillMaxWidth().height(56.dp)){Text(if(tasks.size==1)"Guardar tarea" else "Guardar ${tasks.size} tareas")}
-                    if(tasks.size==1) OutlinedButton(enabled=valid,onClick={submitted=true;val t=tasks.first();plan(if(t.minutes==0&&t.phases.isEmpty())t.copy(minutes=t.planHints.suggestedMinutes)else t)},modifier=Modifier.fillMaxWidth()){Text("Guardar y planificar")}
+                    val shouldPlan=tasks.size==1&&tasks.first().let{it.due.isNotBlank()||it.minutes>0||it.planHints.minutesPerTopic>0}
+                    if(shouldPlan){
+                        Button(enabled=valid,onClick={submitted=true;val t=tasks.first();plan(if(t.minutes==0&&t.phases.isEmpty())t.copy(minutes=t.planHints.suggestedMinutes)else t)},modifier=Modifier.fillMaxWidth().height(56.dp)){Text("Crear mi planificación")}
+                        TextButton(enabled=valid,onClick={submitted=true;save(tasks)},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Guardar solo la tarea")}
+                    }else{
+                        Button(enabled=valid,onClick={submitted=true;save(tasks)},modifier=Modifier.fillMaxWidth().height(56.dp)){Text(if(tasks.size==1)"Guardar tarea" else "Guardar "+tasks.size+" tareas")}
+                    }
                     TextButton(onClick={draft=null;submitted=false;error=""},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Volver al texto")}
                 }
             }
