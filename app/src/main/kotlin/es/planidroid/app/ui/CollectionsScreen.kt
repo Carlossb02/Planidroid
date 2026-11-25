@@ -176,7 +176,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
 }
 
 private data class HouseCard(val key:String,val title:String,val local:Home?,val cloud:SharedSpace?,val children:List<SharedSpace>,val owned:Boolean)
-@Composable fun HomesScreen(uid:String,homes:List<Home>,furniture:List<Furniture>,inventory:List<Item>,model:PlanidroidModel){
+@Composable fun HomesScreen(uid:String,homes:List<Home>,furniture:List<Furniture>,inventory:List<Item>,model:PlanidroidModel,lists:List<ShoppingList> = emptyList()){
     val access=collectionAccess(uid);val online=LocalOnlineAccess.current
     val legacy=Home(id="legacy-home",name="Mi hogar")
     val own=homes+if(furniture.any{it.homeId.isBlank()} )listOf(legacy)else emptyList()
@@ -238,14 +238,14 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
 @Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit,uid:String,model:PlanidroidModel,lists:List<ShoppingList>){
     val data=remember(s.id,s.version,s.body){decode<SharedFurniture>(s.body)}
     val f=data.furniture;val write=s.role in listOf("owner","editor","admin")
-    var consume by remember(s.id){mutableStateOf<Item?>(null)};var restock by remember(s.id){mutableStateOf<Item?>(null)}
+    var consume by remember(s.id){mutableStateOf<Item?>(null)};var restock by remember(s.id){mutableStateOf<Pair<Item,Boolean>?>(null)}
     var layout by remember(s.id){mutableStateOf(false)}
     var edit by remember(s.id){mutableStateOf<Item?>(null)}
     var selected by remember(s.id){mutableStateOf<String?>(null)}
     fun update(next:SharedFurniture){access.work(refresh=false){it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         TextButton(onClick=back){Text("‹ Muebles")}
-        if(write){val exhausted=data.items.filter(InventoryConsumption::pending);if(exhausted.isNotEmpty())RestockBanner(exhausted,{restock=it},{old->if(!access.busy)update(data.copy(items=data.items.map{if(it.id==old.id&&InventoryConsumption.pending(it))it.copy(restockAmount=0.0)else it}))},!access.busy)}
+        if(write){val exhausted=data.items.filter(InventoryConsumption::pending);if(exhausted.isNotEmpty())RestockBanner(exhausted,{i,recipe->restock=i to recipe},{old->if(!access.busy)update(data.copy(items=data.items.map{if(it.id==old.id&&InventoryConsumption.pending(it))it.copy(restockAmount=0.0)else it}))},!access.busy)}
         Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir mueble")}}
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             Column(Modifier.weight(1f)){Text("Interior");ZoneBoard(LayoutGrid.zones(f).filterNot{it.door},data.items,false,selected,{selected=it.name},{})}
@@ -261,7 +261,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
     }
     consume?.let{old->ConsumeDialog(old,{consume=null},{n,done->access.work(refresh=false,finished=done){api->val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible");val d=decode<SharedFurniture>(latest.body);val current=d.items.find{it.id==old.id}?:error("Producto no disponible");require(current.amount==old.amount&&current.unit==old.unit){"Las existencias han cambiado"};val next=InventoryConsumption.consume(current,n);api.update(latest,d.furniture.name,encode(d.copy(items=d.items.map{if(it.id==next.id)next else it})))}})}
-    restock?.let{old->InventoryRestockDialog(uid,old,lists,{restock=null},{products,listId,done->model.restockItem(old,products,listId,false){failure->if(failure!=null)done(failure)else access.work(refresh=false,finished=done){api->val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible");val d=decode<SharedFurniture>(latest.body);val next=d.items.map{if(it.id==old.id&&InventoryConsumption.pending(it)&&it.restockAmount==old.restockAmount)it.copy(restockAmount=0.0)else it};api.update(latest,d.furniture.name,encode(d.copy(items=next)))}}},shared=true)}
+    restock?.let{(old,recipe)->InventoryRestockDialog(uid,old,lists,{restock=null},{products,listId,done->model.restockItem(old,products,listId,false){failure->if(failure!=null)done(failure)else access.work(refresh=false,finished=done){api->val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible");val d=decode<SharedFurniture>(latest.body);val next=d.items.map{if(it.id==old.id&&InventoryConsumption.pending(it)&&it.restockAmount==old.restockAmount)it.copy(restockAmount=0.0)else it};api.update(latest,d.furniture.name,encode(d.copy(items=next)))}}},shared=true,initialRecipeMode=recipe)}
     if(layout)LayoutEditor(f,data.items,{layout=false},{update(data.copy(furniture=it));layout=false})
     edit?.let{i->ItemEditor(i,f,{edit=null},{v->update(data.copy(items=if(data.items.any{it.id==v.id})data.items.map{if(it.id==v.id)v.copy(restockAmount=if(v.amount>0)0.0 else v.restockAmount) else it}else data.items+v));edit=null})}
 }

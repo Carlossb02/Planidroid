@@ -6,7 +6,7 @@ import java.util.UUID
 
 fun newId() = UUID.randomUUID().toString()
 val codec = Json { ignoreUnknownKeys = false; encodeDefaults = true }
-@Serializable enum class Kind { TASK, SESSION, FURNITURE, ITEM, GROUP, SHOPPING, PURCHASE, HOME, SHOPPING_LIST }
+@Serializable enum class Kind { TASK, SESSION, FURNITURE, ITEM, GROUP, SHOPPING, PURCHASE, HOME, SHOPPING_LIST, RECIPE }
 @Serializable enum class Category(val label: String) { INBOX("Bandeja"), DEADLINE("Con fecha límite"), SOON("Próximamente"), SOMEDAY("Sin fecha") }
 @Serializable enum class Status(val label: String) { PENDING("Pendiente"), ACTIVE("En curso"), BLOCKED("Bloqueada"), DONE("Completada"), ARCHIVED("Archivada") }
 @Serializable enum class Priority(val label: String) { NONE("Sin prioridad"), LOW("Baja"), NORMAL("Normal"), HIGH("Alta"), URGENT("Urgente") }

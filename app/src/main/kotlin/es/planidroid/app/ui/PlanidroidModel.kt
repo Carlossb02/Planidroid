@@ -46,6 +46,15 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     fun saveTasks(tasks:List<Task>){val uid=scope.value;run{db.withTransaction{tasks.forEach{dao.save(uid,it.id,Kind.TASK.name,encode(it))}};tasks.forEach{Reminders.update(getApplication(),uid,it)}}}
     fun save(t: Task) { val s=scope.value; run { var next:Task?=null;db.withTransaction{val old=dao.get(s,t.id)?.takeUnless{it.deleted}?.let{decode<Task>(it.payload)};if(old!=null&&old.overlapWith!=t.overlapWith){val all=dao.all(s).filterNot{it.deleted};val before=all.filter{it.kind==Kind.TASK.name}.map{decode<Task>(it.payload)};val sessions=all.filter{it.kind==Kind.SESSION.name}.map{decode<Session>(it.payload)};require(!OverlapPolicy.revokedConflict(sessions,before,before.map{if(it.id==t.id)t else it},System.currentTimeMillis())){"Reorganiza las sesiones solapadas antes de retirar el permiso"}};dao.save(s,t.id,Kind.TASK.name,encode(t));if(old?.status!=Status.DONE){RepeatingTasks.next(t)?.let{n->if(dao.get(s,n.id)==null){dao.save(s,n.id,Kind.TASK.name,encode(n));next=n}}}};Reminders.update(getApplication(),s,t);next?.let{Reminders.update(getApplication(),s,it);message.value="Siguiente ocurrencia creada: ${it.due}"} } }
     fun logFocus(taskId:String,minutes:Int){val uid=scope.value;run{require(minutes in 1..1440);db.withTransaction{val row=dao.get(uid,taskId)?.takeUnless{it.deleted}?:error("La tarea ya no existe");val t=decode<Task>(row.payload);dao.save(uid,t.id,Kind.TASK.name,encode(t.copy(actualMinutes=(t.actualMinutes+minutes).coerceAtMost(100000))))};message.value="Registrados $minutes minutos de concentración"}}
+    fun saveRecipes(recipes:List<SavedRecipe>,finished:(String?)->Unit={}){
+        stockAction({uid->db.withTransaction{
+            require(recipes.size in 1..60)
+            recipes.forEach{r->RecipeBook.validate(r);val previous=dao.get(uid,r.id);require(previous==null||(!previous.deleted&&previous.kind==Kind.RECIPE.name)){"La receta ya no está disponible"};dao.save(uid,r.id,Kind.RECIPE.name,encode(r.copy(updatedAt=System.currentTimeMillis())))}
+        }},finished)
+    }
+    fun deleteRecipe(id:String,finished:(String?)->Unit={}){
+        stockAction({uid->db.withTransaction{val row=dao.get(uid,id);if(row!=null&&!row.deleted&&row.kind==Kind.RECIPE.name)dao.remove(uid,id)}},finished)
+    }
     fun save(h: Home) { val uid=scope.value;run { dao.save(uid,h.id,Kind.HOME.name,encode(h)) } }
     fun save(l: ShoppingList) { val uid=scope.value;run { dao.save(uid,l.id,Kind.SHOPPING_LIST.name,encode(l)) } }
     fun saveShopping(items:List<Shopping>) { val uid=scope.value;run { db.withTransaction { items.forEach{dao.save(uid,it.id,Kind.SHOPPING.name,encode(it))} } } }
@@ -84,7 +93,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
             for(p in products){
                 require(p.name.isNotBlank()&&p.quantity.isFinite()&&p.quantity>0&&p.quantity<=100000)
                 val unit=SpanishUnits.canonical(p.unit)?:error("Elige una unidad válida")
-                val link=current?.takeIf{InventoryConsumption.kind(it)!=InventoryKind.RECIPE&&InventoryConsumption.fold(it.name)==InventoryConsumption.fold(p.name)&&InventoryConsumption.unitKey(it.unit)==InventoryConsumption.unitKey(unit)}
+                val link=current?.takeIf{p.itemId==it.id&&InventoryConsumption.fold(it.name)==InventoryConsumption.fold(p.name)&&InventoryConsumption.unitKey(it.unit)==InventoryConsumption.unitKey(unit)}
                 val candidate=p.copy(id=newId(),name=p.name.trim(),unit=unit,listId=listId,itemId=link?.id.orEmpty(),routine=false,pending=true)
                 if(InventoryConsumption.alreadyPending(candidate,existing,current))continue
                 val old=existing.find{it.listId==listId&&link!=null&&it.itemId==link.id&&InventoryConsumption.unitKey(it.unit)==InventoryConsumption.unitKey(unit)}

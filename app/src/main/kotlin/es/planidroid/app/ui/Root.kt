@@ -58,6 +58,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val sessions=remember(rows){ rows.filter{it.kind==Kind.SESSION.name}.mapNotNull { runCatching{decode<Session>(it.payload)}.getOrNull() } }
     val furniture=remember(rows){ rows.filter{it.kind==Kind.FURNITURE.name}.mapNotNull { runCatching{decode<Furniture>(it.payload)}.getOrNull() } }
     val homes=remember(rows){rows.filter{it.kind==Kind.HOME.name}.mapNotNull{runCatching{decode<Home>(it.payload)}.getOrNull()}}
+    val savedRecipes=remember(rows){rows.filter{it.kind==Kind.RECIPE.name}.mapNotNull{runCatching{decode<SavedRecipe>(it.payload)}.getOrNull()}}
     val shoppingLists=remember(rows){rows.filter{it.kind==Kind.SHOPPING_LIST.name}.mapNotNull{runCatching{decode<ShoppingList>(it.payload)}.getOrNull()}}
     val inventory=remember(rows){ rows.filter{it.kind==Kind.ITEM.name}.mapNotNull { runCatching{decode<Item>(it.payload)}.getOrNull() } }
     val groups=remember(rows){ rows.filter{it.kind==Kind.GROUP.name}.mapNotNull { runCatching{decode<Group>(it.payload)}.getOrNull() } }
@@ -72,7 +73,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     BackHandler(edit!=null || plan!=null || agendaPlan || tab!=Tab.HOME){back()}
     PlanidroidTheme(theme,glass) {
         es.planidroid.app.update.UpdatePrompt()
-        CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature }) {
+        CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature },LocalRecipeLibrary provides RecipeLibrary(savedRecipes,model)) {
         Scaffold(containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snack)},topBar={Surface(color=MaterialTheme.colorScheme.background){Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=20.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){if(tab !in listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES))IconButton(onClick={back()}){Icon(Icons.Default.ArrowBack,"Volver")} ;Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));ProfileAvatar(scope,onClick={tab=Tab.SETTINGS;edit=null;plan=null;agendaPlan=false})}}},bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES).forEach{t->NavigationBarItem(selected=tab==t||(t==Tab.SPACES&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS)),onClick={tab=t;edit=null;plan=null;agendaPlan=false;agendaDraft=null},icon={Icon(when(t){Tab.HOME->Icons.Default.Home;Tab.CALENDAR->Icons.Default.CalendarMonth;Tab.CAPTURE->Icons.Default.AddCircle;Tab.TASKS->Icons.Default.Checklist;else->Icons.Default.GridView},t.label,Modifier.size(if(t==Tab.CAPTURE)30.dp else 24.dp))},label={Text(t.label,maxLines=1)})}}}){pad->
             Box(Modifier.fillMaxSize().padding(pad)){screenState.SaveableStateProvider(tab.name){when(tab){
                 Tab.HOME->Home(tasks,sessions,{edit=it},{tab=Tab.CAPTURE},{tab=Tab.INVENTORY},{tab=Tab.SHOPPING},{tab=Tab.CALENDAR},{tab=Tab.TASKS},{tab=Tab.SPACES},inventory.size,shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},{model.save(listOf(it))},{tab=Tab.FOCUS},external,{tab=Tab.ASSISTANT})

@@ -47,25 +47,28 @@ import es.planidroid.app.domain.*
     }},confirmButton={TextButton(enabled=!busy&&valid,onClick={submit(n!!)}){Text("Consumir")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})
 }
 
-@Composable internal fun RestockBanner(items:List<Item>,replenish:(Item)->Unit,dismiss:(Item)->Unit,enabled:Boolean=true){
-    var expanded by remember{mutableStateOf(false)}
+@Composable internal fun RestockBanner(items:List<Item>,replenish:(Item,Boolean)->Unit,dismiss:(Item)->Unit,enabled:Boolean=true){
+    var index by remember{mutableIntStateOf(0)}
+    val item=items.getOrNull(index.coerceAtMost((items.size-1).coerceAtLeast(0)))?:return
     GlassCard(tint=Peach){
-        Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.ShoppingCart,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("Para reponer",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);if(items.size>2)TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Menos" else "Ver "+items.size)}}
-        (if(expanded)items else items.take(2)).forEach{item->
-            Row(verticalAlignment=Alignment.CenterVertically){
-                Column(Modifier.weight(1f)){Text(item.name,style=MaterialTheme.typography.titleSmall);Text(if(InventoryConsumption.kind(item)==InventoryKind.RECIPE)"Receta agotada"else "Sin existencias",style=MaterialTheme.typography.labelSmall)}
-                TextButton(enabled=enabled,onClick={replenish(item)}){Text(if(InventoryConsumption.kind(item)==InventoryKind.RECIPE)"Ingredientes" else "Añadir")}
-                IconButton(enabled=enabled,onClick={dismiss(item)}){Icon(Icons.Default.Close,"Descartar sugerencia de "+item.name,Modifier.size(18.dp))}
-            }
+        Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.ShoppingCart,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("Para reponer",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);if(items.size>1)TextButton(onClick={index=(index+1)%items.size}){Text(((index.coerceAtMost(items.size-1))+1).toString()+"/"+items.size);Icon(Icons.Default.ChevronRight,"Siguiente sugerencia")}}
+        val recipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE||RecipeBook.matches(item.name,LocalRecipeLibrary.current.recipes).isNotEmpty()
+        Row(verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){Text(item.name,style=MaterialTheme.typography.titleSmall);Text("Sin existencias",style=MaterialTheme.typography.labelSmall)}
+            IconButton(enabled=enabled,onClick={dismiss(item)}){Icon(Icons.Default.Close,"Descartar sugerencia de "+item.name,Modifier.size(18.dp))}
+        }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically){
+            TextButton(enabled=enabled,onClick={replenish(item,false)}){Icon(Icons.Default.AddShoppingCart,null,Modifier.size(18.dp));Spacer(Modifier.width(4.dp));Text("Añadir")}
+            if(recipe){VerticalDivider(Modifier.height(24.dp));TextButton(enabled=enabled,onClick={replenish(item,true)},modifier=Modifier.weight(1f)){Text("Añadir ingredientes de la receta")}}
         }
     }
 }
 
-@Composable internal fun InventoryRestockDialog(uid:String,item:Item,lists:List<ShoppingList>,close:()->Unit,save:(List<Shopping>,String,(String?)->Unit)->Unit,shared:Boolean=false){
+@Composable internal fun InventoryRestockDialog(uid:String,item:Item,lists:List<ShoppingList>,close:()->Unit,save:(List<Shopping>,String,(String?)->Unit)->Unit,shared:Boolean=false,initialRecipeMode:Boolean=false){
     val destinations=lists.ifEmpty{listOf(ShoppingList(id="",name="Mi compra"))}
     var listId by remember(item.id){mutableStateOf(destinations.first().id)}
-    val isRecipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE
-    var recipeMode by remember(item.id){mutableStateOf(isRecipe)}
+    val isRecipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE||RecipeBook.matches(item.name,LocalRecipeLibrary.current.recipes).isNotEmpty()
+    var recipeMode by remember(item.id){mutableStateOf(initialRecipeMode)}
     var amount by remember(item.id){mutableStateOf(amountText(item.restockAmount))}
     var unit by remember(item.id){mutableStateOf(SpanishUnits.canonical(item.unit)?: "ud")}
     var name by remember{mutableStateOf("")};var ingredientAmount by remember{mutableStateOf("1")};var ingredientUnit by remember{mutableStateOf("ud")}
@@ -75,10 +78,10 @@ import es.planidroid.app.domain.*
     val ingredientN=ingredientAmount.replace(',','.').toDoubleOrNull()
     val canAdd=name.isNotBlank()&&ingredientN!=null&&ingredientN.isFinite()&&ingredientN>0&&ingredientN<=100000&&products.size<60
     val valid=if(recipeMode)products.isNotEmpty()else n!=null&&n.isFinite()&&n>0&&n<=100000
-    fun submit(){busy=true;error="";val selected=if(recipeMode)products else listOf(Shopping(name=item.name,quantity=n!!,unit=unit,icon=guessIcon(item.name)));save(selected,listId){failure->busy=false;if(failure==null)close()else error=failure}}
+    fun submit(){busy=true;error="";val selected=if(recipeMode)products else listOf(Shopping(name=item.name,quantity=n!!,unit=unit,icon=guessIcon(item.name),itemId=item.id));save(selected,listId){failure->busy=false;if(failure==null)close()else error=failure}}
     if(ai){
         RecipeSuggestions(uid,emptyList(),listId,{ai=false},{result->products=result;ai=false},dishName=item.name)
-    }else AlertDialog(onDismissRequest={if(!busy)close()},title={Text(if(isRecipe)"Reponer "+item.name else "Añadir a la compra")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+    }else AlertDialog(onDismissRequest={if(!busy)close()},title={Text(if(recipeMode)"Reponer "+item.name else "Añadir a la compra")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
         if(!isRecipe)Text(item.name,style=MaterialTheme.typography.titleMedium)
         Choice("Lista de compra",destinations.map{it.id},listId,{id->destinations.find{it.id==id}?.name?:"Mi compra"}){listId=it}
         if(isRecipe){
