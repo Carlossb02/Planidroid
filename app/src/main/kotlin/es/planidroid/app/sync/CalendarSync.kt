@@ -22,9 +22,19 @@ object CalendarSync {
     private val mutex=Mutex()
     const val oauthScope="https://www.googleapis.com/auth/calendar.events"
     fun request(email:String)=AuthorizationRequest.builder().setAccount(Account(email,"com.google")).setRequestedScopes(listOf(Scope(oauthScope))).build()
+    fun explain(e:Throwable):String=when(e){
+        is CalendarHttpException->when(e.status){
+            401->"Calendar: autorización caducada. Vuelve a conectar."
+            403->"Calendar: acceso denegado ("+(e.reason.ifBlank{"403"})+"). Comprueba permisos de eventos, API habilitada y cuenta de prueba."
+            429->"Calendar: límite de consultas. Inténtalo más tarde."
+            else->"Calendar HTTP "+e.status+" "+e.reason
+        }
+        is com.google.android.gms.common.api.ApiException->"Google OAuth: código "+e.statusCode+". Comprueba cliente Android, SHA-1 y usuario de prueba."
+        else->e.localizedMessage?:"No se pudo conectar a Calendar"
+    }
     private fun prefs(ctx:Context,uid:String)=ctx.getSharedPreferences("calendar-$uid",Context.MODE_PRIVATE)
     fun mode(ctx:Context,uid:String)=prefs(ctx,uid).getString("mode","OFF")?:"OFF"
-    fun setMode(ctx:Context,uid:String,value:String){prefs(ctx,uid).edit().putString("mode",value).apply();val wm=WorkManager.getInstance(ctx);if(value=="AUTOMATIC_ALL"){val req=PeriodicWorkRequestBuilder<CalendarWorker>(6,TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setInputData(workDataOf("uid" to uid)).build();wm.enqueueUniquePeriodicWork("calendar-$uid",ExistingPeriodicWorkPolicy.UPDATE,req)}else wm.cancelUniqueWork("calendar-$uid");if(value=="OFF")prefs(ctx,uid).edit().remove("events").apply()}
+    fun setMode(ctx:Context,uid:String,value:String){prefs(ctx,uid).edit().putString("mode",value).apply();val wm=WorkManager.getInstance(ctx);if(value=="AUTOMATIC_ALL"){val req=PeriodicWorkRequestBuilder<CalendarWorker>(6,TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setInputData(workDataOf("uid" to uid)).build();wm.enqueueUniquePeriodicWork("calendar-$uid",ExistingPeriodicWorkPolicy.UPDATE,req)}else wm.cancelUniqueWork("calendar-$uid");if(value=="OFF"){prefs(ctx,uid).edit().remove("events").apply();ServiceHealth.mark(ctx,uid,"calendar",false)}}
     fun events(ctx:Context,uid:String)=runCatching{decode<List<ExternalEvent>>(prefs(ctx,uid).getString("events","[]")!!)}.getOrDefault(emptyList())
     fun observe(ctx:Context,uid:String)=callbackFlow{val p=prefs(ctx,uid);val l=SharedPreferences.OnSharedPreferenceChangeListener{_,key->if(key=="events")trySend(events(ctx,uid))};p.registerOnSharedPreferenceChangeListener(l);trySend(events(ctx,uid));awaitClose{p.unregisterOnSharedPreferenceChangeListener(l)}}
     fun message(ctx:Context,uid:String)=prefs(ctx,uid).getString("message","").orEmpty()
@@ -53,7 +63,7 @@ object CalendarSync {
         }
         val currentIds=dao.all(uid).filter{!it.deleted&&it.kind==Kind.SESSION.name}.map{it.id}.toSet()
         val events=gateway.list("primary",from,to).mapNotNull{e->val st=stamp(e)?:return@mapNotNull null;if((ownership(e) in currentIds && ownership(e) !in conflicting) || st.end<=st.start)return@mapNotNull null;ExternalEvent(e.getString("id"),st.title,st.start,st.end,e.optString("transparency")!="transparent")}
-        check(Cloud.auth(ctx)?.currentUser?.uid==uid);val msg="Google: $pushed enviados, $pulled actualizados, ${events.size} externos"+if(issues.isEmpty())"." else ". ${issues.size} conflictos:\n"+issues.joinToString("\n");p.edit().putString("events",encode(events)).putString("message",msg).apply();msg
+        check(Cloud.auth(ctx)?.currentUser?.uid==uid);val msg="Google: $pushed enviados, $pulled actualizados, ${events.size} externos"+if(issues.isEmpty())"." else ". ${issues.size} conflictos:\n"+issues.joinToString("\n");p.edit().putString("events",encode(events)).putString("message",msg).apply();ServiceHealth.mark(ctx,uid,"calendar",true);msg
     }
 }
-class CalendarWorker(ctx:Context,p:WorkerParameters):CoroutineWorker(ctx,p){override suspend fun doWork():Result{val uid=inputData.getString("uid")?:return Result.failure();val user=Cloud.auth(applicationContext)?.currentUser?:return Result.success();if(user.uid!=uid||CalendarSync.mode(applicationContext,uid)!="AUTOMATIC_ALL")return Result.success();val email=user.email?:return Result.success();return try{val auth=Identity.getAuthorizationClient(applicationContext).authorize(CalendarSync.request(email)).await();val token=auth.accessToken;if(auth.hasResolution()||token.isNullOrBlank())return Result.success();CalendarSync.sync(applicationContext,uid,token);Result.success()}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){Result.retry()}}}
+class CalendarWorker(ctx:Context,p:WorkerParameters):CoroutineWorker(ctx,p){override suspend fun doWork():Result{val uid=inputData.getString("uid")?:return Result.failure();val user=Cloud.auth(applicationContext)?.currentUser?:return Result.success();if(user.uid!=uid||CalendarSync.mode(applicationContext,uid)!="AUTOMATIC_ALL")return Result.success();val email=user.email?:return Result.success();return try{val auth=Identity.getAuthorizationClient(applicationContext).authorize(CalendarSync.request(email)).await();val token=auth.accessToken;if(auth.hasResolution()||token.isNullOrBlank()||CalendarSync.oauthScope !in auth.grantedScopes){ServiceHealth.mark(applicationContext,uid,"calendar",false);return Result.success()};CalendarSync.sync(applicationContext,uid,token);Result.success()}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){ServiceHealth.mark(applicationContext,uid,"calendar",false);Result.success()}}}
