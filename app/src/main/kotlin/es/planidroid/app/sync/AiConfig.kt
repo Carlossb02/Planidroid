@@ -8,5 +8,5 @@ object AiConfig {
     fun endpoint(ctx:Context,uid:String)=prefs(ctx,uid).getString("endpoint","").orEmpty()
     fun mode(ctx:Context,uid:String)=prefs(ctx,uid).getString("mode","LOCAL").orEmpty()
     fun configure(ctx:Context,uid:String,mode:String,endpoint:String){if(mode=="GEMINI"){val url=URL(endpoint);require(uid!="local"&&url.protocol=="https"&&url.host.isNotBlank()&&url.userInfo==null){"Necesitas cuenta Google y endpoint HTTPS propio"}};prefs(ctx,uid).edit().putString("mode",mode).putString("endpoint",endpoint).apply()}
-    fun provider(ctx:Context,uid:String,remote:Boolean):AiProvider {if(!remote)return LocalAi();require(mode(ctx,uid)=="GEMINI"){"Activa Gemini en Ajustes"};return GeminiGateway(endpoint(ctx,uid)){val user=Cloud.auth(ctx)?.currentUser?:error("Inicia sesión");check(user.uid==uid);user.getIdToken(false).await().token?:error("Sin token de autenticación")}}
+    fun provider(ctx:Context,uid:String,remote:Boolean):AiProvider {if(!remote)return LocalAi();require(mode(ctx,uid)=="GEMINI"){"Activa Gemini en Ajustes"};return GeminiGateway(endpoint(ctx,uid)){val user=Cloud.auth(ctx)?.currentUser?:error("Inicia sesión");check(user.uid==uid);Cloud.requireApproval(ctx,uid);user.getIdToken(false).await().token?:error("Sin token de autenticación")}}
 }

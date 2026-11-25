@@ -19,7 +19,7 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     private val db=PlanidroidDb.get(app); private val dao=db.records(); private val auth=Cloud.auth(app)
     private val _scope=MutableStateFlow(auth?.currentUser?.uid ?: "local"); val scope=_scope.asStateFlow()
     private val listener=com.google.firebase.auth.FirebaseAuth.AuthStateListener { _scope.value=it.currentUser?.uid ?: "local" }
-    init { auth?.addAuthStateListener(listener) }
+    init { auth?.addAuthStateListener(listener); val uid=_scope.value; if(uid!="local")Cloud.schedule(app,uid) }
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val rows=scope.flatMapLatest { dao.observe(it) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -95,8 +95,21 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         db.withTransaction { for(e in entries) { if(dao.get(s,e.id)==null) { dao.save(s,e.id,e.kind.name,e.payload); count++ } } }
         entries.filter{it.kind==Kind.TASK}.forEach{e->dao.get(s,e.id)?.takeUnless{it.deleted}?.let{Reminders.update(getApplication(),s,decode<Task>(it.payload))}};setting(b.theme,b.glass);message.value="Importados $count de ${entries.size} elementos. Los existentes no se sobrescriben."
     } }
-    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.schedule(getApplication(),uid); sync() } finally { busy.value=false } } }
-    fun logout() { auth?.signOut(); syncState.value="Sin sincronizar" }
-    fun sync() { val s=scope.value; if(s=="local") return; run { if(busy.value) { /* login may already be in progress */ }; syncState.value="Sincronizando…"; try { Cloud.sync(getApplication(),s); SessionReminders.refresh(getApplication(),s);syncState.value="Sincronizado" } catch(e: CancellationException) { throw e } catch(e:Exception) { syncState.value="Error o conflicto"; message.value=e.localizedMessage ?: "Sin conexión" } } }
+    fun login(context: Context) { run { busy.value=true; try { Cloud.login(context); val uid=auth?.currentUser?.uid ?: return@run; _scope.value=uid; Cloud.stop(getApplication(),uid); syncState.value="Cuenta conectada. Comprueba la autorización para sincronizar." } finally { busy.value=false } } }
+    fun logout() { Cloud.stop(getApplication(),scope.value); auth?.signOut(); syncState.value="Sin sincronizar" }
+    fun automaticSync()=Cloud.automatic(getApplication(),scope.value)
+    fun setAutomaticSync(enabled:Boolean){val uid=scope.value;if(uid=="local")return;run{
+        if(enabled)Cloud.requireApproval(getApplication(),uid)
+        Cloud.setAutomatic(getApplication(),uid,enabled)
+        message.value=if(enabled)"Sincronización automática cada 6 horas aproximadamente" else "Sincronización manual"
+    }}
+    fun sync() { val s=scope.value; if(s=="local"||busy.value) return; busy.value=true;run {
+        syncState.value="Sincronizando…"
+        try { Cloud.sync(getApplication(),s);syncState.value="Sincronizado" }
+        catch(e: CancellationException) { throw e }
+        catch(e:Cloud.ApprovalRequired){Cloud.setAutomatic(getApplication(),s,false);syncState.value="Pendiente de autorización";message.value=e.message.orEmpty()}
+        catch(e:Exception) { syncState.value="Error o conflicto"; message.value=e.localizedMessage ?: "Sin conexión" }
+        finally{busy.value=false}
+    } }
     override fun onCleared() { auth?.removeAuthStateListener(listener); super.onCleared() }
 }

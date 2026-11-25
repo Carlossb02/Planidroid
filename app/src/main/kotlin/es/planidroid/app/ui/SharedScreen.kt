@@ -18,7 +18,7 @@ import kotlinx.coroutines.CancellationException
     var spaces by remember(uid){mutableStateOf(emptyList<SharedSpace>())};var invites by remember(uid){mutableStateOf(emptyList<Membership>())};var current by remember(uid){mutableStateOf<SharedSpace?>(null)};var members by remember(uid){mutableStateOf(emptyList<Membership>())};var comments by remember(uid){mutableStateOf(emptyList<SharedComment>())};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var create by remember{mutableStateOf(false)}
     suspend fun refresh(){val result=api!!.list();spaces=result.first.filter{it.kind in listOf("task","project","home","shopping")};invites=result.second;current=current?.let{old->spaces.find{it.id==old.id}};current?.let{s->comments=api.comments(s);members=if(s.role in listOf("owner","admin"))api.participants(s)else emptyList()}}
     fun work(action:suspend ()->Unit){if(api==null||busy)return;busy=true;scope.launch{try{error="";action();refresh()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.localizedMessage?:"Error de conexión"}finally{busy=false}}}
-    LaunchedEffect(uid){if(api!=null)work{}}
+    // Explicit refresh instead of reading every time this screen opens.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Section("Compartido","Espacios explícitos, separados de tus tareas y calendario privados.")
         if(api==null){Text("Comparte solo lo que tú elijas.");Button(onClick={online("colaborar y acceder a contenido compartido")}){Text("Iniciar sesión")};return@Column}

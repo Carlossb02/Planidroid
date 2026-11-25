@@ -1,7 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    // Only the project administrator (Firebase Console / Admin SDK) can approve accounts.
+    function approved() {
+      return request.auth != null && request.auth.token.email_verified == true &&
+        get(/databases/$(database)/documents/approvedUsers/$(request.auth.uid)).data.enabled == true;
+    }
+    function owner(uid) { return approved() && request.auth.uid == uid; }
+    match /approvedUsers/{uid} {
+      // A single explicit access check is allowed even before approval.
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
     function valid() {
       let d = request.resource.data;
       return d.keys().hasAll(['kind','payload','deleted','version','updatedAt']) &&
@@ -16,7 +26,7 @@ service cloud.firestore {
       allow update: if owner(uid) && valid() && request.resource.data.version == resource.data.version + 1 && request.resource.data.kind == resource.data.kind;
       allow delete: if false; // durable tombstones; no direct destructive delete
     }
-    function signed() { return request.auth != null && request.auth.token.email_verified == true; }
+    function signed() { return approved(); }
     function space(id) { return get(/databases/$(database)/documents/sharedSpaces/$(id)); }
     function member(id) { return get(/databases/$(database)/documents/memberships/$(id + '~' + request.auth.token.email)); }
     function isOwner(id) { return signed() && space(id).data.ownerUid == request.auth.uid; }
