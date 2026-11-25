@@ -13,6 +13,9 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Source
+import com.google.firebase.firestore.MetadataChanges
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
 import es.planidroid.app.data.*
@@ -61,6 +64,18 @@ object Cloud {
         check(auth(context)?.currentUser?.uid==uid){"Sesión no disponible"}
         val snapshot=FirebaseFirestore.getInstance().collection("approvedUsers").document(uid).get(Source.SERVER).await()
         if(snapshot.get("enabled")!=true)throw ApprovalRequired()
+    }
+    fun observeApproval(context:Context,uid:String)=callbackFlow<Boolean?>{
+        if(uid=="local"||auth(context)?.currentUser?.uid!=uid){trySend(null);close();return@callbackFlow}
+        val listener=FirebaseFirestore.getInstance().collection("approvedUsers").document(uid)
+            .addSnapshotListener(MetadataChanges.INCLUDE){snapshot,error->
+                trySend(if(error!=null||snapshot==null||snapshot.metadata.isFromCache)null else snapshot.get("enabled")==true)
+            }
+        awaitClose{listener.remove()}
+    }
+    suspend fun verifyDatabase(context:Context,uid:String){
+        check(auth(context)?.currentUser?.uid==uid)
+        FirebaseFirestore.getInstance().collection("users").document(uid).collection("records").limit(1).get(Source.SERVER).await()
     }
     fun stop(context:Context,uid:String) {
         if(uid!="local")WorkManager.getInstance(context).cancelUniqueWork("sync-$uid")

@@ -20,8 +20,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** One entry point: text, preview, save. No attachment or camera controls. */
-@Composable fun Capture(uid:String, save:(List<Task>)->Unit, plan:(Task)->Unit) {
+@Composable fun Capture(uid:String, save:(List<Task>)->Unit, plan:(Task)->Unit, manual:()->Unit = {}) {
     val context=LocalContext.current
+    val online=LocalOnlineAccess.current
     val coroutine=rememberCoroutineScope()
     var input by rememberSaveable { mutableStateOf("") }
     var draft by remember { mutableStateOf<List<Task>?>(null) }
@@ -29,17 +30,16 @@ import kotlinx.coroutines.launch
     var submitted by remember { mutableStateOf(false) }
     var consent by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    fun interpret(remote:Boolean) {
+    fun interpret() {
         val request=input.trim()
         busy=true; error=""
         coroutine.launch {
             try {
-                val local=CaptureParser.parse(request)
-                val structuredStudy=local.size==1&&local.first().planHints.finishBeforeDeadline
-                val tasks=if(remote&&!structuredStudy) AiConfig.provider(context,uid,true).parseNaturalLanguage(request).tasks else local
-                draft=tasks.ifEmpty { local }.map { t -> t.copy(id=newId(),planHints=if(remote&&!structuredStudy)SmartCapture.hints(t.description.ifBlank{request},t.due,java.time.LocalDate.now())else t.planHints) }
+                val tasks=AiConfig.provider(context,uid).parseNaturalLanguage("Fecha actual: "+java.time.LocalDate.now()+"\n"+request).tasks
+                check(tasks.isNotEmpty()){"Gemini no devolvió tareas. Añade más información."}
+                draft=tasks.map { t -> t.copy(id=newId(),planHints=SmartCapture.hints(if(tasks.size==1)request else t.description,t.due,java.time.LocalDate.now())) }
             } catch(e:CancellationException) { throw e }
-            catch(e:Exception) { error="No se pudo usar Gemini. Puedes continuar sin conexión." }
+            catch(e:Exception) { error=e.localizedMessage?:"No se pudo usar Gemini." }
             finally { busy=false }
         }
     }
@@ -50,9 +50,10 @@ import kotlinx.coroutines.launch
                     Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
                     Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
                     OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),placeholder={Text("Preparar el examen del 20 de diciembre, dedicar 8 horas y repasar los temas…")},shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
-                    Button(onClick={if(AiConfig.mode(context,uid)=="GEMINI"&&uid!="local")consent=true else interpret(false)},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
+                    Button(onClick={if(uid=="local")online("organizar con Gemini")else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if(error.isNotBlank()){Text(error,color=MaterialTheme.colorScheme.error);TextButton(onClick={interpret(false)},enabled=!busy){Text("Continuar en local")}}
+                    if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+                    TextButton(onClick=manual,enabled=!busy){Text("Crear tarea manualmente")}
                     Text("Puedes escribir una tarea o varias, una por línea. No se guarda nada sin tu confirmación.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Section("Tu propuesta","Revisa y ajusta lo necesario.")
@@ -90,5 +91,5 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviará solo el texto que acabas de escribir a tu servidor configurado.")},confirmButton={TextButton(onClick={consent=false;interpret(true)}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false;interpret(false)}){Text("Usar modo local")}})
+    if(consent) AlertDialog(onDismissRequest={consent=false},title={Text("Organizar con Gemini")},text={Text("Se enviará solo el texto que acabas de escribir a Gemini a través del servidor seguro.")},confirmButton={TextButton(onClick={consent=false;interpret()}){Text("Continuar")}},dismissButton={TextButton(onClick={consent=false}){Text("Cancelar")}})
 }
