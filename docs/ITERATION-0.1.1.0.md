@@ -6,3 +6,8 @@
 - Profile avatar and optional login prompt are included. A Google login does not transfer guest data automatically.
 - OCR operates on-device; handwriting accuracy is not guaranteed. User confirms recognized lines.
 - Android build and Firebase emulator tests must run before merging. No production credentials or release artifacts included.
+
+## Exam planning regression
+- Example: “tengo un examen de matematicas el 24 de diciembre, puedo estudiar 3 dias a la semana y tardo 5 horas por tema”. The title is “Examen de matemáticas (24 diciembre)”; 300 minutes per topic, three days per week; the topic count remains unknown. Monday/Wednesday/Friday are suggested, not inferred facts.
+- The main capture action opens the live planner. Once topic count is supplied, effort is calculated and actual sessions are previewed. Study finishes before the exam day. Availability chips or a text correction such as “solo puedo miércoles y viernes” regenerate the preview. On confirmation, future unfinished sessions for that task are replaced transactionally. Completed sessions and other events remain unchanged.
+- Regression tests in StudyIntentTest.kt; Android CI still required.
