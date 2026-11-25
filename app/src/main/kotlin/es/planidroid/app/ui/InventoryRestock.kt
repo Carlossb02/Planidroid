@@ -70,25 +70,25 @@ import es.planidroid.app.domain.*
     val isRecipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE||RecipeBook.matches(item.name,LocalRecipeLibrary.current.recipes).isNotEmpty()
     var recipeMode by remember(item.id){mutableStateOf(initialRecipeMode)}
     var amount by remember(item.id){mutableStateOf(amountText(item.restockAmount))}
-    var unit by remember(item.id){mutableStateOf(SpanishUnits.canonical(item.unit)?: "ud")}
+    var unit by remember(item.id){mutableStateOf(SpanishUnits.canonical(item.unit)?:item.unit)}
     var name by remember{mutableStateOf("")};var ingredientAmount by remember{mutableStateOf("1")};var ingredientUnit by remember{mutableStateOf("ud")}
     var products by remember(item.id){mutableStateOf(emptyList<Shopping>())}
     var ai by remember{mutableStateOf(false)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")}
     val n=amount.replace(',','.').toDoubleOrNull()
     val ingredientN=ingredientAmount.replace(',','.').toDoubleOrNull()
     val canAdd=name.isNotBlank()&&ingredientN!=null&&ingredientN.isFinite()&&ingredientN>0&&ingredientN<=100000&&products.size<60
-    val valid=if(recipeMode)products.isNotEmpty()else n!=null&&n.isFinite()&&n>0&&n<=100000
+    val valid=if(recipeMode)products.isNotEmpty()else n!=null&&n.isFinite()&&n>0&&n<=100000&&SpanishUnits.canonical(unit)!=null
     fun submit(){busy=true;error="";val selected=if(recipeMode)products else listOf(Shopping(name=item.name,quantity=n!!,unit=unit,icon=guessIcon(item.name),itemId=item.id));save(selected,listId){failure->busy=false;if(failure==null)close()else error=failure}}
     if(ai){
         RecipeSuggestions(uid,emptyList(),listId,{ai=false},{result->products=result;ai=false},dishName=item.name)
     }else AlertDialog(onDismissRequest={if(!busy)close()},title={Text(if(recipeMode)"Reponer "+item.name else "Añadir a la compra")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
-        if(!isRecipe)Text(item.name,style=MaterialTheme.typography.titleMedium)
+        Text(item.name,style=MaterialTheme.typography.titleMedium)
         Choice("Lista de compra",destinations.map{it.id},listId,{id->destinations.find{it.id==id}?.name?:"Mi compra"}){listId=it}
         if(isRecipe){
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){FilterChip(recipeMode,{recipeMode=true},label={Text("Ingredientes")},enabled=!busy);FilterChip(!recipeMode,{recipeMode=false},label={Text("Plato preparado")},enabled=!busy)}
         }
         if(recipeMode){
-            FilledTonalButton(enabled=!busy,onClick={ai=true},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Sugerir ingredientes")}
+            FilledTonalButton(enabled=!busy,onClick={ai=true},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Elegir receta o sugerir ingredientes")}
             products.forEach{p->Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(p.name,Modifier.size(24.dp));Column(Modifier.weight(1f).padding(horizontal=8.dp)){Text(p.name);Text(amountText(p.quantity)+" "+p.unit,style=MaterialTheme.typography.labelSmall)};IconButton(onClick={products=products.filterNot{it.id==p.id}},enabled=!busy){Icon(Icons.Default.Close,"Quitar ingrediente")}}}
             Field(name,{name=it.take(180)},"Ingrediente")
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(ingredientAmount,{ingredientAmount=it.take(18)},"Cantidad")};Column(Modifier.weight(1f)){UnitSelector(ingredientUnit,{ingredientUnit=it},allowEmpty=false)}}

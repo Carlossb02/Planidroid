@@ -12,7 +12,7 @@ object InventoryConsumption {
     fun kind(item:Item):InventoryKind {
         if(item.contentKind!=InventoryKind.AUTO)return item.contentKind
         val name=fold(item.name)
-        if(Regex("""\b(paella|lasa[nñ]a|guiso|estofado|croquetas?|tortilla|ensaladilla|gazpacho|salmorejo|plato preparado|sopa preparada|pizza)\b""").containsMatchIn(name))return InventoryKind.RECIPE
+        if(Regex("""\b(paella|lasana|guiso|estofado|croquetas?|tortilla|ensaladilla|gazpacho|salmorejo|plato preparado|sopa preparada|pizza|alb[oó]ndigas?|empanadas?|canelones|ensalada|potaje|crepes?|bizcocho|tarta)\b""").containsMatchIn(name))return InventoryKind.RECIPE
         return when(productType(item.name)){
             ProductType.DAIRY,ProductType.YOGURT,ProductType.CHEESE,ProductType.EGGS,ProductType.FRUIT,ProductType.VEGETABLES,ProductType.MEAT,ProductType.FISH,ProductType.BAKERY,ProductType.FROZEN,ProductType.DRINKS,ProductType.PANTRY->InventoryKind.INGREDIENT
             else->InventoryKind.OTHER

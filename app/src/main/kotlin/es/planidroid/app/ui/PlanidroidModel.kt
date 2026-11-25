@@ -68,7 +68,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         stockAction({uid->db.withTransaction{
             val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:error("El producto ya no existe")
             val current=decode<Item>(row.payload)
-            require(current.amount==expected.amount&&current.unit==expected.unit){"Las existencias han cambiado. Revisa la cantidad."}
+            require(current.amount==expected.amount&&current.unit==expected.unit&&current.name==expected.name){"Las existencias han cambiado. Revisa la cantidad."}
             val next=InventoryConsumption.consume(current,amount)
             dao.save(uid,next.id,Kind.ITEM.name,encode(next))
         }},finished)
@@ -87,7 +87,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
             if(listId.isNotBlank())require(dao.get(uid,listId)?.let{!it.deleted&&it.kind==Kind.SHOPPING_LIST.name}==true){"La lista ya no existe"}
             val current=if(localInventory){
                 val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:error("El producto ya no existe")
-                decode<Item>(row.payload).also{require(InventoryConsumption.pending(it)&&it.restockAmount==expected.restockAmount){"Las existencias o la sugerencia han cambiado"}}
+                decode<Item>(row.payload).also{require(InventoryConsumption.pending(it)&&it.restockAmount==expected.restockAmount&&it.name==expected.name&&it.unit==expected.unit){"Las existencias o la sugerencia han cambiado"}}
             }else null
             val existing=dao.all(uid).filter{!it.deleted&&it.kind==Kind.SHOPPING.name}.map{decode<Shopping>(it.payload)}.toMutableList()
             for(p in products){

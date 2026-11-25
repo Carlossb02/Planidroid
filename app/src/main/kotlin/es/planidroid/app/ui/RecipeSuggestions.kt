@@ -14,8 +14,6 @@ import androidx.core.content.FileProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -228,6 +226,8 @@ private data class IngredientForm(val id:String=newId(),val name:String="",val q
     var photo by remember{mutableStateOf<Uri?>(null)};var file by remember{mutableStateOf<java.io.File?>(null)}
     var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var consent by remember{mutableStateOf(false)};var connect by remember{mutableStateOf(false)}
     fun cleanup(){file?.delete();file=null;photo=null}
+    val latestFile by rememberUpdatedState(file)
+    DisposableEffect(Unit){onDispose{latestFile?.delete()}}
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->if(!ok)cleanup()}
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->if(uri!=null){cleanup();photo=uri}}
     fun scan(){
