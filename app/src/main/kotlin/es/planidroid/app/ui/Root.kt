@@ -79,7 +79,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.FOCUS->FocusScreen(tasks){id,min->model.logFocus(id,min)}
                 Tab.TASKS->TaskList(tasks,{edit=it},{tab=Tab.CAPTURE},{model.delete(it.id,Kind.TASK)})
                 Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},{agendaDraft=null;agendaPlan=true},external,{manualEvent=it})
-                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS},{edit=Task(title="")},compactAvailability)
+                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS},{prefill->edit=prefill},compactAvailability)
                 Tab.ASSISTANT->AssistantScreen(scope,tasks,{model.saveTasks(it)},{plan=it;tab=Tab.CALENDAR},compactAvailability)
                 Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{tab=Tab.INVENTORY},{tab=Tab.SHOPPING},{tab=Tab.SHARED},{tab=Tab.ASSISTANT},{tab=Tab.TOOLS})
                 Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)
@@ -90,7 +90,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
             }}}
         }
         manualEvent?.let{day->ManualEventDialog(day,{manualEvent=null},{title,start,end,reminder->model.createManualEvent(title,start,end,reminder);if(reminder&&Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);manualEvent=null})}
-        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId="",overlapWith=emptyList()));edit=null},tasks) }
+        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null;if(tab==Tab.CAPTURE)tab=Tab.TASKS},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId="",overlapWith=emptyList()));edit=null},tasks,scope,compactAvailability) }
         if(agendaPlan){val draft=agendaDraft;val candidates=if(draft==null)tasks else tasks.filterNot{it.id==draft.id}+draft;AgendaEditor(candidates,sessions,{agendaPlan=false;agendaDraft=null},{new,old,updates->val selectedDraft=draft?.takeIf{d->new.any{it.taskId==d.id}}?.let{d->updates.find{it.id==d.id}?:d};model.commitPlan(new,old,updatedTask=selectedDraft,updates=updates.filterNot{it.id==draft?.id},allowBatch=true);agendaPlan=false;agendaDraft=null;tab=Tab.CALENDAR},blocked,scope,draft)}
         plan?.let { t -> PlanDialog(t,sessions,{plan=null},{updated,blocks,replacing->model.commitPlan(blocks,replacing,updated);plan=null;tab=Tab.CALENDAR},blocked,tasks,scope,{draft->agendaDraft=draft;plan=null;agendaPlan=true}) }
         }

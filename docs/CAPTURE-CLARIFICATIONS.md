@@ -1,0 +1,7 @@
+# Flujo visual y aclaraciones
+- Captura con un único resultado estructurado de Gemini: título, notas, fechas, esfuerzo, recordatorio, fases, disponibilidad y descansos. Hasta dos preguntas relevantes con índice de tarea y campo. Respuestas directas aplicadas localmente (sin otra petición), con opción de completar manualmente. Las preguntas de texto libre se conservan como notas, no se reinterpretan automáticamente.
+- Editor completo abre datos ya propuestos; opción explícita Completar con Gemini para rellenar campos faltantes. Respeta campos existentes, no envía contactos ni adjuntos. Las claves permanecen personales.
+- Plan individual pregunta si puede empezar hoy cuando el cálculo encuentra tiempo libre hoy. Empezar mañana evita reservas hoy. Si el inicio quedó desactualizado mientras se revisaba, recalcula y exige nueva confirmación. Agenda global permite elegir empezar hoy. Respeta límites de hora y citas.
+- Interfaz de captura, planificación, productos y asistente más visual. Icono de fruta propio sustituye referencia Apple inexistente.
+- Se omiten valores por defecto al enviar preferencias de planificación para ahorrar tokens. No hay reintentos ni llamadas automáticas por aclaración.
+- Revisar compilación y pruebas de Android del último commit antes de distribuir.
