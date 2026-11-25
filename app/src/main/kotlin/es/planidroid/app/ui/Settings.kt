@@ -44,7 +44,8 @@ import kotlinx.coroutines.CancellationException
         dbOk=false
         if(approval==true)try{Cloud.verifyDatabase(ctx,uid);dbOk=true}catch(e:CancellationException){throw e}catch(_:Exception){}
     }
-    LaunchedEffect(sync){if(sync=="Sincronizado")dbOk=true}
+    LaunchedEffect(sync){if(sync=="Sincronizado")dbOk=true else if(sync=="Error o conflicto"||sync=="Pendiente de autorización")dbOk=false}
+    LaunchedEffect(uid){if(uid!="local")CalendarSync.verifyConnection(ctx,uid)}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
         GlassCard{
             Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Sin verificar"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
@@ -59,7 +60,7 @@ import kotlinx.coroutines.CancellationException
             HorizontalDivider()
             ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()
-            ServiceRow("Gemini",uid!="local"&&approval==true&&AiConfig.configured()&&gemini,if(testBusy)"Comprobando…" else if(!AiConfig.configured())"Pendiente de configuración" else "Pulsa para comprobar"){
+            ServiceRow("Gemini",uid!="local"&&approval==true&&AiConfig.configured()&&gemini,if(testBusy)"Comprobando…" else if(!AiConfig.configured())"Pendiente de configuración" else if(gemini)"Última prueba correcta · pulsa para verificar" else "Pulsa para comprobar"){
                 if(uid=="local")online("usar Gemini")
                 else if(!testBusy){testBusy=true;detail="";coroutine.launch{try{AiConfig.provider(ctx,uid).answerWithUserContext("Responde únicamente OK.",emptyList());detail="Gemini ha respondido correctamente."}catch(e:CancellationException){throw e}catch(e:Exception){detail=e.localizedMessage?:"No se pudo conectar"}finally{testBusy=false}}}
             }

@@ -32,6 +32,18 @@ object CalendarSync {
         is com.google.android.gms.common.api.ApiException->"Google OAuth: código "+e.statusCode+". Comprueba cliente Android, SHA-1 y usuario de prueba."
         else->e.localizedMessage?:"No se pudo conectar a Calendar"
     }
+    suspend fun verifyConnection(ctx:Context,uid:String){
+        if(mode(ctx,uid)=="OFF")return
+        try{
+            val user=Cloud.auth(ctx)?.currentUser?:error("Sin cuenta")
+            check(user.uid==uid)
+            val a=Identity.getAuthorizationClient(ctx).authorize(request(user.email?:error("Sin correo"))).await()
+            val token=a.accessToken
+            check(!a.hasResolution()&&oauthScope in a.grantedScopes&&!token.isNullOrBlank())
+            GoogleCalendarGateway{requireNotNull(token)}.verify()
+            ServiceHealth.mark(ctx,uid,"calendar",true)
+        }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){ServiceHealth.mark(ctx,uid,"calendar",false)}
+    }
     private fun prefs(ctx:Context,uid:String)=ctx.getSharedPreferences("calendar-$uid",Context.MODE_PRIVATE)
     fun mode(ctx:Context,uid:String)=prefs(ctx,uid).getString("mode","OFF")?:"OFF"
     fun setMode(ctx:Context,uid:String,value:String){prefs(ctx,uid).edit().putString("mode",value).apply();val wm=WorkManager.getInstance(ctx);if(value=="AUTOMATIC_ALL"){val req=PeriodicWorkRequestBuilder<CalendarWorker>(6,TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setInputData(workDataOf("uid" to uid)).build();wm.enqueueUniquePeriodicWork("calendar-$uid",ExistingPeriodicWorkPolicy.UPDATE,req)}else wm.cancelUniqueWork("calendar-$uid");if(value=="OFF"){prefs(ctx,uid).edit().remove("events").apply();ServiceHealth.mark(ctx,uid,"calendar",false)}}

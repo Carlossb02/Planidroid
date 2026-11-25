@@ -1,4 +1,5 @@
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import java.net.URI
 
 plugins {
     id("com.android.application")
@@ -19,7 +20,7 @@ android {
         versionName = "0.1.1.4"
         val endpoint = providers.gradleProperty("planidroidGeminiEndpoint").orElse("").get().trim()
         require(endpoint.isBlank() || runCatching {
-            val u = java.net.URI(endpoint)
+            val u = URI(endpoint)
             u.scheme == "https" && u.host != null && u.userInfo == null && u.path == "/ai" && u.query == null && u.fragment == null && !endpoint.contains('"') && !endpoint.contains('\\')
         }.getOrDefault(false)) { "planidroidGeminiEndpoint must be an HTTPS /ai URL" }
         buildConfigField("String", "GEMINI_ENDPOINT", "\"$endpoint\"")

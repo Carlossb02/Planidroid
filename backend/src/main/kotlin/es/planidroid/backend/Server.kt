@@ -88,8 +88,6 @@ fun main() {
             if (token == null) { exchange.error(401, "Authentication required"); return@createContext }
             val uid = try { auth.verifyIdToken(token, true).uid } catch (_: Exception) { exchange.error(401, "Invalid token"); return@createContext }
             if (allowed.isNotEmpty() && uid !in allowed) { exchange.error(403, "Not allowed"); return@createContext }
-            val approved = try { approvals.document(uid).get().get(5, TimeUnit.SECONDS).getBoolean("enabled") == true } catch (_: Exception) { exchange.error(503, "Approval unavailable"); return@createContext }
-            if (!approved) { exchange.error(403, "Not approved"); return@createContext }
             val bytes = exchange.requestBody.use { it.readNBytes(MAX_REQUEST + 1) }
             if (bytes.size > MAX_REQUEST) { exchange.error(413, "Too large"); return@createContext }
             val input = try { JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject } catch (_: Exception) { exchange.error(400, "Invalid JSON"); return@createContext }
@@ -97,6 +95,8 @@ fun main() {
             val text = input.string("text")
             if (operation == null || operation !in operations || text == null || text.isBlank() || text.length > 16_000) { exchange.error(400, "Invalid request"); return@createContext }
             if (!quota.allow(uid)) { exchange.error(429, "Hourly limit"); return@createContext }
+            val approved = try { approvals.document(uid).get().get(5, TimeUnit.SECONDS).getBoolean("enabled") == true } catch (_: Exception) { exchange.error(503, "Approval unavailable"); return@createContext }
+            if (!approved) { exchange.error(403, "Not approved"); return@createContext }
             val result = try { gemini.generate(operation, text) } catch (_: Exception) { exchange.error(502, "Provider unavailable or invalid response"); return@createContext }
             exchange.reply(200, result)
         } catch (_: Exception) {
