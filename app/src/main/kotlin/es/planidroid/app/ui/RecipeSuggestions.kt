@@ -52,12 +52,12 @@ private fun readRecipes(body:org.json.JSONObject):List<RecipeDraft>{
     fun choose(index:Int,list:List<RecipeDraft> = recipes){selectedRecipe=index;val items=list[index].ingredients;selected=items.indices.toSet();amounts=items.mapIndexed{i,v->i to amountText(v.amount)}.toMap()}
     val valid=selected.all{i->amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
     AlertDialog(onDismissRequest={if(!busy)close()},title={Text("Recetas con Gemini")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
-        Text("Se enviarán los productos y sus cantidades indicadas, junto a tu petición.",style=MaterialTheme.typography.bodySmall)
+        Text("Recetas a partir de tu lista",style=MaterialTheme.typography.labelMedium)
         Field(request,{request=it.take(2000)},"¿Qué quieres cocinar?",false)
         Button(enabled=!busy&&request.isNotBlank(),onClick={
             if(!AiConfig.configured(ctx,uid))connect=true else{busy=true;error="";scope.launch{
                 try{
-                    val context=ingredients.take(100).joinToString("\n"){it.name+if(it.quantitySpecified)" · "+amountText(it.quantity)+" "+it.unit else " · cantidad no indicada"}
+                    val context=ingredients.take(40).joinToString("\n"){it.name+if(it.quantitySpecified)" · "+amountText(it.quantity)+" "+it.unit else " · cantidad no indicada"}
                     val response=AiConfig.provider(ctx,uid).recipe(context,request)
                     val result=readRecipes(response);check(result.isNotEmpty()){"No hay recetas"}
                     recipes=result;choose(0,result)
@@ -71,7 +71,7 @@ private fun readRecipes(body:org.json.JSONObject):List<RecipeDraft>{
             Text(recipe.title,style=MaterialTheme.typography.titleLarge)
             Text("Para "+recipe.servings+" personas",style=MaterialTheme.typography.labelLarge)
             Text("Ingredientes",style=MaterialTheme.typography.titleMedium)
-            Text("Desmarca los que no quieras añadir. Si ya están en tu lista, desmárcalos para evitar duplicados.",style=MaterialTheme.typography.bodySmall)
+            Text("Selecciona ingredientes y ajusta cantidades.",style=MaterialTheme.typography.bodySmall)
             Row{TextButton(onClick={selected=recipe.ingredients.indices.toSet()}){Text("Marcar todos")};TextButton(onClick={selected=emptySet()}){Text("Desmarcar todos")}}
             recipe.ingredients.forEachIndexed{i,item->
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){

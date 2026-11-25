@@ -71,7 +71,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         val s=decode<Shopping>(row.payload)
         val i=dao.get(uid,s.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
         val n=ShoppingLogic.needed(s,i); if(n<=0)return@withTransaction
-        val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon,listId=s.listId,quantitySpecified=s.quantitySpecified||(i!=null&&s.routine&&i.amount<s.minimum))
+        val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon,listId=s.listId,quantitySpecified=s.quantitySpecified||(i!=null&&s.routine&&i.amount<s.minimum),referenceUrl=s.referenceUrl,referenceTitle=s.referenceTitle)
         if(i!=null)dao.save(uid,i.id,Kind.ITEM.name,encode(i.copy(amount=i.amount+n,quantity=amountText(i.amount+n))))
         dao.save(uid,p.id,Kind.PURCHASE.name,encode(p));dao.save(uid,s.id,Kind.SHOPPING.name,encode(s.copy(pending=false)))
     } } }
@@ -79,7 +79,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         val current=dao.get(uid,p.id)?.takeUnless{it.deleted}?.let{decode<Purchase>(it.payload)} ?: return@withTransaction
         if(undo && current.undone)return@withTransaction
         val old=dao.get(uid,current.shoppingId)?.takeUnless{it.deleted}?.let{decode<Shopping>(it.payload)}
-        val s=old?.copy(pending=true,quantity=current.quantity,quantitySpecified=current.quantitySpecified) ?: Shopping(name=current.name,quantity=current.quantity,unit=current.unit,routine=current.routine,icon=current.icon,listId=current.listId,quantitySpecified=current.quantitySpecified)
+        val s=old?.copy(pending=true,quantity=current.quantity,quantitySpecified=current.quantitySpecified,referenceUrl=current.referenceUrl,referenceTitle=current.referenceTitle) ?: Shopping(name=current.name,quantity=current.quantity,unit=current.unit,routine=current.routine,icon=current.icon,listId=current.listId,quantitySpecified=current.quantitySpecified,referenceUrl=current.referenceUrl,referenceTitle=current.referenceTitle)
         dao.save(uid,s.id,Kind.SHOPPING.name,encode(s))
         if(undo){ val item=dao.get(uid,current.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
             if(ShoppingLogic.canUndo(current,item) && item!=null){ val n=current.stockBefore!!;dao.save(uid,item.id,Kind.ITEM.name,encode(item.copy(amount=n,quantity=amountText(n)))) }
