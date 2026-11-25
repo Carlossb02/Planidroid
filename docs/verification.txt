@@ -1,0 +1,30 @@
+/tmp/planidroid-final-smoke/LocalParser.kt:8:44: warning: 'constructor Locale(String!, String!)' is deprecated. Deprecated in Java
+        val lower=text.lowercase(java.util.Locale("es","ES"));val iso=Regex("\\b\\d{4}-\\d{2}-\\d{2}\\b").find(text)?.value
+                                           ^
+PASS 1: duraci?n, huecos y m?ximo
+PASS 2: d?ficit
+PASS 3: d?as no disponibles
+PASS 4: no programar en pasado
+PASS 5: fechas inv?lidas
+PASS layout: colisiones, puerta independiente y l?mites
+PASS compra: m?nimos, reposici?n y protecci?n de stock
+PASS agenda: prioridad fecha, fases, no solapamientos y d?ficit
+PASS parser: fecha relativa y duraci?n sin asumir recurrencia
+PASS Calendar: five reconciliation cases
+PASS dependencies: blocked, fulfilled, cycles
+PASS planning: earliest start date
+PASS planning: remaining time
+PASS recurrence: stable next occurrence
+
+Revision sintactica Kotlin PSI: 45 archivos, 0 errores de sintaxis (ver ultima ejecucion).
+Node: node --check del proxy y pruebas de reglas sin errores.
+Smoke JVM ejecutado con las mismas clases de dominio sin las anotaciones y funciones de kotlinx.serialization; no verifica serializacion ni Android. Android SDK/Gradle no disponibles; no se ha compilado APK, no se han ejecutado JUnit, UI ni emulador Firebase.
+
+0.4.2: backend Kotlin/JVM. PASS: Kotlin backend sliding quota, isolation and expiry (kotlinc + JVM, sin dependencias externas). Revisión PSI: 56 archivos Kotlin, 0 errores sintácticos. No se han resuelto las dependencias Gradle del backend ni compilado el APK; no se ha probado Firebase ni Gemini en vivo. La comprobación Node anterior corresponde a la versión histórica del proxy.
+
+0.5.0: 59 archivos Kotlin, 0 errores PSI. Cinco comprobaciones CaptureParser ejecutadas con kotlinc/JVM (modelos sin serialización). Tests instrumentados añadidos, no ejecutados. Compilación Android pendiente de CI.
+
+0.5.0.1: 16 comprobaciones JVM de versiones y nombres de assets superadas. Renombrado Gradle revisado; no ejecutado por ausencia de SDK y Gradle.
+
+0.1.0.0: reinicio de numeración pública; versionCode 9 conserva orden de instalación. Compilación Android no ejecutada.
+0.1.0.0 credential safeguards: tested in a temporary Git repo: clean source accepted; seven sensitive path patterns ignored; forced staging of google-services.json blocked; dummy key-shaped content blocked; historical sensitive commit blocked by pre-push. No real credentials used. Full Android compilation remains unverified.

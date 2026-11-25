@@ -1,0 +1,8 @@
+import es.planidroid.app.domain.*
+import java.time.*
+fun main(){
+ val z=Zone("Balda",w=4,h=2);check(!LayoutGrid.fits(Zone("Cajón",y=1),listOf(z)));check(LayoutGrid.fits(Zone("Puerta",door=true),listOf(z)));check(LayoutGrid.place("Cajón",ZoneType.DRAWER,false,listOf(z),4,2)?.y==2);check(!LayoutGrid.fits(Zone("Fuera",x=3,w=2),emptyList()));println("PASS layout: colisiones, puerta independiente y límites")
+ val i=Item(furnitureId="f",name="Leche",amount=1.0);val s=Shopping(name="Leche",routine=true,pending=false,itemId=i.id,minimum=2.0,target=5.0);check(ShoppingLogic.needed(s,i)==4.0);check(ShoppingLogic.needed(s,i.copy(amount=5.0))==0.0);val p=Purchase(shoppingId=s.id,name=s.name,quantity=4.0,unit="ud",routine=true,stockBefore=1.0,stockAfter=5.0);check(ShoppingLogic.canUndo(p,i.copy(amount=5.0)));check(!ShoppingLogic.canUndo(p,i.copy(amount=4.0)));println("PASS compra: mínimos, reposición y protección de stock")
+ val d=LocalDate.of(2027,1,4);val inputs=listOf(AgendaInput("later","Later",90,d.plusDays(1),4),AgendaInput("first","First",90,d,0,listOf("phase1" to 45,"phase2" to 45)));val r=AgendaPlanner.plan(inputs,d,d.plusDays(1),setOf(DayOfWeek.MONDAY,DayOfWeek.TUESDAY),LocalTime.of(9,0),LocalTime.of(10,0),60,emptyList(),ZoneOffset.UTC,0);check(r.blocks.first().taskId=="first");check(r.blocks.first().phaseId=="phase1");check(r.blocks.zipWithNext().all{(a,b)->a.end<=b.start});check(r.deficits.sumOf{it.minutes}==60);println("PASS agenda: prioridad fecha, fases, no solapamientos y déficit")
+ val t=LocalParser.parse("Estudiar mañana 2 horas",d);check(t.due==d.plusDays(1).toString()&&t.minutes==120);check(LocalParser.parse("Estudiar 2 horas al día",d).minutes==0);println("PASS parser: fecha relativa y duración sin asumir recurrencia")
+}

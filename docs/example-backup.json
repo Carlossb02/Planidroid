@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "exportDate": "2026-11-25T00:00:00Z",
+  "appVersion": "0.1.0",
+  "entries": [
+    {
+      "id": "demo-fridge",
+      "kind": "FURNITURE",
+      "payload": "{\"id\": \"demo-fridge\", \"name\": \"Nevera de cocina\", \"type\": \"FRIDGE\", \"room\": \"Cocina\", \"compartments\": [\"Baldas\", \"Cajón verduras\"], \"notes\": \"\"}"
+    },
+    {
+      "id": "demo-item",
+      "kind": "ITEM",
+      "payload": "{\"id\": \"demo-item\", \"furnitureId\": \"demo-fridge\", \"name\": \"Leche\", \"compartment\": \"Baldas\", \"quantity\": \"2 litros\", \"expiry\": \"2027-01-04\", \"notes\": \"\"}"
+    },
+    {
+      "id": "demo-task",
+      "kind": "TASK",
+      "payload": "{\"id\": \"demo-task\", \"title\": \"Comprar leche\", \"category\": \"SOON\"}"
+    }
+  ],
+  "theme": "Sistema",
+  "glass": true
+}

@@ -1,0 +1,23 @@
+package es.planidroid.app.domain
+
+import kotlinx.serialization.Serializable
+import kotlin.math.abs
+
+@Serializable enum class ZoneType(val label:String) { SHELF("Balda"), DRAWER("Cajón"), BASKET("Cesta"), RACK("Botellero"), OPEN("Hueco") }
+@Serializable data class Zone(val name:String, val type:ZoneType=ZoneType.SHELF, val door:Boolean=false, val x:Int=0, val y:Int=0, val w:Int=4, val h:Int=1)
+object LayoutGrid {
+    const val WIDTH=4
+    const val HEIGHT=8
+    fun fits(z:Zone, others:List<Zone>):Boolean = z.w in 1..WIDTH && z.h in 1..HEIGHT && z.x>=0 && z.y>=0 && z.x+z.w<=WIDTH && z.y+z.h<=HEIGHT && others.none { it.name!=z.name && it.door==z.door && z.x<it.x+it.w && z.x+z.w>it.x && z.y<it.y+it.h && z.y+z.h>it.y }
+    fun place(name:String,type:ZoneType,door:Boolean,others:List<Zone>,w:Int=4,h:Int=1):Zone? { for(y in 0..HEIGHT-h) for(x in 0..WIDTH-w) { val z=Zone(name,type,door,x,y,w,h);if(fits(z,others))return z };return null }
+    fun zones(f:Furniture):List<Zone> = f.zones.ifEmpty { f.compartments.take(8).mapIndexed { i,n->Zone(n,y=i) } }
+}
+@Serializable data class Shopping(val id:String=newId(),val name:String,val quantity:Double=1.0,val unit:String="ud",val routine:Boolean=false,val pending:Boolean=true,val itemId:String="",val minimum:Double=0.0,val target:Double=1.0,val icon:String="🛒")
+@Serializable data class Purchase(val id:String=newId(),val shoppingId:String,val name:String,val quantity:Double,val unit:String,val routine:Boolean,val boughtAt:Long=System.currentTimeMillis(),val itemId:String="",val stockBefore:Double?=null,val stockAfter:Double?=null,val undone:Boolean=false,val icon:String="🛒")
+object ShoppingLogic {
+    fun needed(s:Shopping,i:Item?):Double = if(s.routine && i!=null && i.amount<s.minimum) (s.target-i.amount).coerceAtLeast(0.0) else if(s.pending) s.quantity else 0.0
+    fun canUndo(p:Purchase,i:Item?):Boolean = p.stockAfter!=null && p.stockBefore!=null && i!=null && abs(i.amount-p.stockAfter)<0.000001
+}
+val productIcons=listOf("📦","🥛","🧀","🥚","🍎","🍌","🥦","🥕","🍅","🥩","🐟","🍗","🍞","🧊","🍦","🥤","🍾","🍚","🥫","🍝","🧴","🧻","🧽","👕","💊","🔧")
+fun guessIcon(name:String):String { val n=name.lowercase();return when { listOf("leche","yogur").any{it in n}->"🥛";"queso" in n->"🧀";"huevo" in n->"🥚";"manzana" in n->"🍎";"plátano" in n->"🍌";"tomate" in n->"🍅";"pollo" in n->"🍗";"pescado" in n->"🐟";"pan" in n->"🍞";"papel" in n->"🧻";"detergente" in n->"🧴";else->"📦"} }
+fun amountText(n:Double)=if(n%1.0==0.0)n.toLong().toString() else java.math.BigDecimal.valueOf(n).stripTrailingZeros().toPlainString()
