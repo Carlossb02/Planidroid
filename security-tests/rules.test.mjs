@@ -21,3 +21,26 @@ test('shared: invitation, acceptance, revocation, roles and isolation',async()=>
  await assertSucceeds(setDoc(mem(a,'c@example.com'),invitation('c@example.com','editor')));await assertSucceeds(updateDoc(mem(c,'c@example.com'),{status:'accepted',acceptedUid:'C',updatedAt:serverTimestamp()}));await assertSucceeds(updateDoc(sp(c),{title:'Edited',version:2,updatedAt:serverTimestamp()}));await assertFails(updateDoc(sp(c),{ownerUid:'C',version:3,updatedAt:serverTimestamp()}));await assertFails(setDoc(mem(c,'d@example.com'),{...invitation('d@example.com','reader'),invitedBy:'C'}));
  await assertSucceeds(setDoc(doc(c,'sharedSpaces',id,'comments','c1'),{authorUid:'C',body:'Comment',createdAt:serverTimestamp()}));await assertFails(setDoc(doc(c,'sharedSpaces',id,'comments','c2'),{authorUid:'A',body:'Spoof',createdAt:serverTimestamp()}));await assertFails(getDoc(sp(d)));await assertSucceeds(deleteDoc(mem(a,'b@example.com')));await assertFails(getDoc(sp(b)));
 });
+
+test('house membership inherits furniture access; direct furniture sharing does not expose siblings or house',async()=>{
+ const a=user('A'),b=user('B'),c=user('C'),d=user('D');
+ const sp=(db,id)=>doc(db,'sharedSpaces',id);
+ const mk=(kind,title,parentId='')=>({ownerUid:'A',kind,title,body:'{}',version:1,updatedAt:serverTimestamp(),sourceId:title,parentId,homeName:'Home'});
+ const invite=async(id,email,role)=>assertSucceeds(setDoc(doc(a,'memberships',id+'~'+email),{spaceId:id,email,role,status:'pending',invitedBy:'A',acceptedUid:'',expiresAt:Timestamp.fromMillis(Date.now()+86400000),updatedAt:serverTimestamp()}));
+ const accept=async(db,id,email,uid)=>assertSucceeds(updateDoc(doc(db,'memberships',id+'~'+email),{status:'accepted',acceptedUid:uid,updatedAt:serverTimestamp()}));
+ await assertSucceeds(setDoc(sp(a,'house1'),mk('house','Home')));
+ await assertSucceeds(setDoc(sp(a,'fridge1'),mk('furniture','Fridge','house1')));
+ await assertSucceeds(setDoc(sp(a,'cabinet1'),mk('furniture','Cabinet','house1')));
+ await invite('fridge1','b@example.com','reader');await accept(b,'fridge1','b@example.com','B');
+ await assertSucceeds(getDoc(sp(b,'fridge1')));await assertFails(getDoc(sp(b,'cabinet1')));await assertFails(getDoc(sp(b,'house1')));
+ await assertFails(getDocs(query(collection(b,'sharedSpaces'),where('ownerUid','==','A'),where('kind','==','furniture'),where('parentId','==','house1'))));
+ await invite('house1','c@example.com','editor');await accept(c,'house1','c@example.com','C');
+ await assertSucceeds(getDoc(sp(c,'fridge1')));await assertSucceeds(getDoc(sp(c,'cabinet1')));
+ await assertSucceeds(getDocs(query(collection(c,'sharedSpaces'),where('ownerUid','==','A'),where('kind','==','furniture'),where('parentId','==','house1'))));
+ await assertSucceeds(updateDoc(sp(c,'fridge1'),{body:'{"updated":true}',version:2,updatedAt:serverTimestamp()}));
+ await assertFails(updateDoc(sp(b,'fridge1'),{body:'{}',version:3,updatedAt:serverTimestamp()}));
+ await assertFails(getDoc(sp(d,'fridge1')));
+ await assertFails(setDoc(sp(c,'spoof'),{...mk('furniture','Spoof','house1'),ownerUid:'C'}));
+ await assertSucceeds(deleteDoc(doc(a,'memberships','house1~c@example.com')));
+ await assertFails(getDoc(sp(c,'fridge1')));await assertSucceeds(getDoc(sp(b,'fridge1')));
+});

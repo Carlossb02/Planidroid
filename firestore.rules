@@ -6,7 +6,7 @@ service cloud.firestore {
       let d = request.resource.data;
       return d.keys().hasAll(['kind','payload','deleted','version','updatedAt']) &&
         d.keys().hasOnly(['kind','payload','deleted','version','updatedAt']) &&
-        d.kind in ['TASK','SESSION','FURNITURE','ITEM','GROUP','SHOPPING','PURCHASE'] &&
+        d.kind in ['TASK','SESSION','FURNITURE','ITEM','GROUP','SHOPPING','PURCHASE','HOME','SHOPPING_LIST'] &&
         d.payload is string && d.payload.size() <= 200000 && d.deleted is bool &&
         d.version is int && d.version >= 1 && d.updatedAt == request.time;
     }
@@ -21,18 +21,25 @@ service cloud.firestore {
     function member(id) { return get(/databases/$(database)/documents/memberships/$(id + '~' + request.auth.token.email)); }
     function isOwner(id) { return signed() && space(id).data.ownerUid == request.auth.uid; }
     function role(id, roles) { return signed() && member(id).data.status == 'accepted' && member(id).data.acceptedUid == request.auth.uid && member(id).data.role in roles; }
-    function canRead(id) { return isOwner(id) || role(id,['reader','editor','admin']); }
+    function inherited(d, roles) {
+      return signed() && d.kind=='furniture' && d.parentId is string && d.parentId.size()>0 &&
+        space(d.parentId).data.kind=='house' && space(d.parentId).data.ownerUid==d.ownerUid &&
+        role(d.parentId,roles);
+    }
+    function canRead(id) { return isOwner(id) || role(id,['reader','editor','admin']) || inherited(space(id).data,['reader','editor','admin']); }
     function manager(id) { return isOwner(id) || role(id,['admin']); }
-    function writer(id) { return isOwner(id) || role(id,['editor','admin']); }
+    function writer(id) { return isOwner(id) || role(id,['editor','admin']) || inherited(space(id).data,['editor','admin']); }
     function validSpace() {
       let d=request.resource.data;
-      return d.keys().hasOnly(['ownerUid','kind','title','body','version','updatedAt']) &&
-        d.kind in ['task','project','home','shopping'] && d.ownerUid is string && d.title is string && d.title.size()>0 && d.title.size()<=180 &&
-        d.body is string && d.body.size()<=50000 && d.version is int && d.updatedAt==request.time;
+      return d.keys().hasOnly(['ownerUid','kind','title','body','version','updatedAt','sourceId','parentId','homeName']) &&
+        d.kind in ['task','project','home','shopping','house','furniture','shopping_list'] && d.ownerUid is string && d.title is string && d.title.size()>0 && d.title.size()<=180 &&
+        d.body is string && d.body.size()<=50000 && d.version is int && d.updatedAt==request.time &&
+        (!(d.kind in ['house','furniture','shopping_list']) || (d.sourceId is string && d.sourceId.size()>0 && d.sourceId.size()<=180 && d.parentId is string && d.homeName is string && d.homeName.size()<=180 &&
+          (d.kind=='furniture' ? (d.parentId.size()>0 && space(d.parentId).data.kind=='house' && space(d.parentId).data.ownerUid==d.ownerUid) : d.parentId=='')));
     }
     match /sharedSpaces/{id} {
-      allow get: if signed() && (resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']));
-      allow list: if signed() && resource.data.ownerUid==request.auth.uid;
+      allow get: if signed() && (resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']) || inherited(resource.data,['reader','editor','admin']));
+      allow list: if signed() && (resource.data.ownerUid==request.auth.uid || inherited(resource.data,['reader','editor','admin']));
       allow create: if signed() && validSpace() && request.resource.data.ownerUid==request.auth.uid && request.resource.data.version==1;
       allow update: if writer(id) && validSpace() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body','version','updatedAt']) && request.resource.data.version==resource.data.version+1;
       allow delete: if false;

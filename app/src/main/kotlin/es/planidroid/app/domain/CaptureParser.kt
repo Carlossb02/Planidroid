@@ -14,8 +14,9 @@ object CaptureParser {
         val match=datePattern.find(lower)
         val explicit=match?.let{m->runCatching{val month=months.indexOf(m.groupValues[2])+1;val year=m.groupValues[3].toIntOrNull();val d=LocalDate.of(year?:today.year,month,m.groupValues[1].toInt());if(year==null&&d<today)d.plusYears(1)else d}.getOrNull()}
         val date=explicit?.toString()?:original.due
-        val title=line.replace(Regex("^(tengo que|necesito|quiero|debo)\\s+",RegexOption.IGNORE_CASE),"").substringBefore(',').trim().take(180).replaceFirstChar{it.uppercase()}.ifBlank{"Pendiente"}
+        val title=StudyIntent.examTitle(line,date)?:line.replace(Regex("^(tengo que|necesito|quiero|debo)\\s+",RegexOption.IGNORE_CASE),"").substringBefore(',').trim().take(180).replaceFirstChar{it.uppercase()}.ifBlank{"Pendiente"}
         val recurring=Regex("\\b(al día|cada día|por día|diarias?|cada semana|semanales?|a la semana|por semana)\\b").containsMatchIn(lower)
-        original.copy(title=title,description=if(title.equals(line,true))"" else line,category=if(date.isNotBlank())Category.DEADLINE else if(lower.contains("próximamente"))Category.SOON else Category.INBOX,due=date,minutes=if(recurring)0 else original.minutes)
+        val hints=SmartCapture.hints(line,date,today)
+        original.copy(planHints=hints,title=title,description=if(title.equals(line,true))"" else line,category=if(date.isNotBlank())Category.DEADLINE else if(lower.contains("próximamente"))Category.SOON else Category.INBOX,due=date,minutes=SmartCapture.totalMinutes(line).takeIf{it>0}?:if(hints.minutesPerTopic>0&&hints.topicCount>0)runCatching{StudyIntent.studyMinutes(hints,hints.topicCount)}.getOrDefault(0)else 0)
     }
 }
