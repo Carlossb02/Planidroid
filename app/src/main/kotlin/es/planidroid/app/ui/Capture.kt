@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
                     Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
                     Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
                     OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),placeholder={Text("Preparar el examen del 20 de diciembre, dedicar 8 horas y repasar los temas…")},shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
-                    Button(onClick={if(AiConfig.mode(context,uid)=="GEMINI")consent=true else interpret(false)},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
+                    Button(onClick={if(AiConfig.mode(context,uid)=="GEMINI"&&uid!="local")consent=true else interpret(false)},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(error.isNotBlank()){Text(error,color=MaterialTheme.colorScheme.error);TextButton(onClick={interpret(false)},enabled=!busy){Text("Continuar en local")}}
                     Text("Puedes escribir una tarea o varias, una por línea. No se guarda nada sin tu confirmación.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

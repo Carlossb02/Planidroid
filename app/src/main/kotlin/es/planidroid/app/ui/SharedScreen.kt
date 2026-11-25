@@ -14,14 +14,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 @Composable fun SharedScreen(uid:String){
-    val ctx=LocalContext.current; val scope=rememberCoroutineScope(); val api=remember(uid){runCatching{SharedCloud(ctx)}.getOrNull()}
+    val online=LocalOnlineAccess.current;val ctx=LocalContext.current; val scope=rememberCoroutineScope(); val api=remember(uid){runCatching{SharedCloud(ctx)}.getOrNull()}
     var spaces by remember(uid){mutableStateOf(emptyList<SharedSpace>())};var invites by remember(uid){mutableStateOf(emptyList<Membership>())};var current by remember(uid){mutableStateOf<SharedSpace?>(null)};var members by remember(uid){mutableStateOf(emptyList<Membership>())};var comments by remember(uid){mutableStateOf(emptyList<SharedComment>())};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var create by remember{mutableStateOf(false)}
     suspend fun refresh(){val result=api!!.list();spaces=result.first;invites=result.second;current=current?.let{old->spaces.find{it.id==old.id}};current?.let{s->comments=api.comments(s);members=if(s.role in listOf("owner","admin"))api.participants(s)else emptyList()}}
     fun work(action:suspend ()->Unit){if(api==null||busy)return;busy=true;scope.launch{try{error="";action();refresh()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.localizedMessage?:"Error de conexión"}finally{busy=false}}}
     LaunchedEffect(uid){if(api!=null)work{}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Section("Compartido","Espacios explícitos, separados de tus tareas y calendario privados.")
-        if(api==null){Text("Inicia sesión con Google y configura las reglas de Firestore para colaborar.");return@Column}
+        if(api==null){Text("Comparte solo lo que tú elijas.");Button(onClick={online("colaborar y acceder a contenido compartido")}){Text("Iniciar sesión")};return@Column}
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         Row{OutlinedButton(enabled=!busy,onClick={work{}}){Text("Actualizar")};Spacer(Modifier.width(8.dp));Button(enabled=!busy,onClick={create=true}){Text("Nuevo espacio")}}
         invites.forEach{m->GlassCard(tint=Lilac){Text("Invitación · ${m.role}");Text("Espacio ${m.space.take(8)}");Row{TextButton(enabled=!busy,onClick={work{api.respond(m,true)}}){Text("Aceptar")};TextButton(enabled=!busy,onClick={work{api.respond(m,false)}}){Text("Rechazar")}}}}

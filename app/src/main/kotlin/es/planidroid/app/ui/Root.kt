@@ -50,12 +50,13 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val shopping=remember(rows){rows.filter{it.kind==Kind.SHOPPING.name}.mapNotNull{runCatching{decode<Shopping>(it.payload)}.getOrNull()}}
     val purchases=remember(rows){rows.filter{it.kind==Kind.PURCHASE.name}.mapNotNull{runCatching{decode<Purchase>(it.payload)}.getOrNull()}}
     var tab by remember(scope){mutableStateOf(Tab.HOME)}; var edit by remember(scope){mutableStateOf<Task?>(null)}; var plan by remember(scope){mutableStateOf<Task?>(null)}
-    var agendaPlan by remember(scope){mutableStateOf(false)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
+    var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
     LaunchedEffect(message){if(message.isNotBlank()){snack.showSnackbar(message);model.message.value=""}}
     BackHandler(edit!=null || plan!=null || agendaPlan || tab!=Tab.HOME){when{agendaPlan->agendaPlan=false;plan!=null->plan=null;edit!=null->edit=null;else->tab=Tab.HOME}}
     PlanidroidTheme(theme,glass) {
         es.planidroid.app.update.UpdatePrompt()
+        CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature }) {
         Scaffold(containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snack)},topBar={Surface(color=MaterialTheme.colorScheme.background){Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=20.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){ProfileAvatar(scope,onClick={tab=Tab.SETTINGS;edit=null;plan=null;agendaPlan=false});Spacer(Modifier.width(12.dp));Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))}}},bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES).forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t;edit=null;plan=null},icon={Icon(when(t){Tab.HOME->Icons.Default.Home;Tab.CALENDAR->Icons.Default.CalendarMonth;Tab.CAPTURE->Icons.Default.AddCircle;Tab.TASKS->Icons.Default.Checklist;else->Icons.Default.GridView},t.label,Modifier.size(if(t==Tab.CAPTURE)30.dp else 24.dp))},label={Text(t.label,maxLines=1)})}}}){pad->
             Crossfade(targetState=tab,modifier=Modifier.fillMaxSize().padding(pad),label="navigation"){screen->when(screen){
                 Tab.HOME->Home(tasks,sessions,{edit=it},{tab=Tab.CAPTURE},{tab=Tab.INVENTORY},{tab=Tab.SHOPPING},{tab=Tab.CALENDAR},{tab=Tab.TASKS},{tab=Tab.SPACES},inventory.size,shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},{model.save(listOf(it))},{tab=Tab.FOCUS})
@@ -64,7 +65,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},{agendaPlan=true},external)
                 Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->model.save(created);plan=created;tab=Tab.TASKS})
                 Tab.ASSISTANT->AssistantScreen(scope,tasks){model.saveTasks(it)}
-                Tab.SPACES->Column(Modifier.fillMaxSize()){Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={tab=Tab.INVENTORY},modifier=Modifier.weight(1f)){Icon(Icons.Default.Home,null);Text(" Hogar")};OutlinedButton(onClick={tab=Tab.SHOPPING},modifier=Modifier.weight(1f)){Icon(Icons.Default.ShoppingCart,null);Text(" Compra")}};TextButton(onClick={tab=Tab.SHARED},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.People,null);Text(" Compartido")};TextButton(onClick={tab=Tab.ASSISTANT},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.AutoAwesome,null);Text(" Asistente")};Spaces(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it})}
+                Tab.SPACES->Column(Modifier.fillMaxSize()){Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={tab=Tab.INVENTORY},modifier=Modifier.weight(1f)){Icon(Icons.Default.Home,null);Text(" Hogar")};OutlinedButton(onClick={tab=Tab.SHOPPING},modifier=Modifier.weight(1f)){Icon(Icons.Default.ShoppingCart,null);Text(" Compra")}};TextButton(onClick={if(scope=="local")onlineFeature="ver tus espacios compartidos" else tab=Tab.SHARED},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.People,null);Text(" Compartido")};TextButton(onClick={tab=Tab.ASSISTANT},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.AutoAwesome,null);Text(" Asistente")};Spaces(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it})}
                 Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)
                 Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
                 Tab.SHARED->SharedScreen(scope)
@@ -74,6 +75,8 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
         edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null},{model.delete(task.id,Kind.TASK);edit=null},{t->model.save(t);edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId=""));edit=null},tasks) }
         if(agendaPlan)AgendaEditor(tasks,sessions,{agendaPlan=false},{new,old->model.commitPlan(new,old);agendaPlan=false;tab=Tab.CALENDAR},blocked)
         plan?.let { t -> PlanDialog(t,sessions,{plan=null},{blocks->model.commitPlan(blocks,emptyList());plan=null;tab=Tab.CALENDAR},blocked) }
+        }
+        onlineFeature?.let{feature->OnlineSignInDialog(feature,model,scope){onlineFeature=null}}
     }
 }
 @Composable fun Home(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,capture:()->Unit,inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,spaces:()->Unit,count:Int,buyCount:Int,saveSession:(Session)->Unit,focus:()->Unit){
