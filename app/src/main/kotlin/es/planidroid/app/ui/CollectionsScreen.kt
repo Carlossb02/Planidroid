@@ -172,6 +172,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=if(data.items.any{it.id==p.id})data.items.map{if(it.id==p.id)next.copy(itemId="")else it}else data.items+next.copy(itemId="")));editing=null})}
 }
 
+private data class HouseCard(val key:String,val title:String,val local:Home?,val cloud:SharedSpace?,val children:List<SharedSpace>,val owned:Boolean)
 @Composable fun HomesScreen(uid:String,homes:List<Home>,furniture:List<Furniture>,inventory:List<Item>,model:PlanidroidModel){
     val access=collectionAccess(uid);val online=LocalOnlineAccess.current
     val legacy=Home(id="legacy-home",name="Mi hogar")

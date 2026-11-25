@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import es.planidroid.app.domain.*
@@ -17,6 +18,7 @@ import es.planidroid.app.domain.*
 internal fun productLabel(type:ProductType)=when(type){
     ProductType.VEGETABLES->"Verduras y legumbres";ProductType.FRUIT->"Fruta";ProductType.DAIRY->"Lácteos";ProductType.YOGURT->"Yogures";ProductType.CHEESE->"Quesos";ProductType.EGGS->"Huevos";ProductType.MEAT->"Carne";ProductType.FISH->"Pescado";ProductType.BAKERY->"Panadería";ProductType.PANTRY->"Despensa";ProductType.DRINKS->"Bebidas";ProductType.FROZEN->"Congelados";ProductType.CLEANING->"Limpieza";ProductType.HYGIENE->"Higiene";ProductType.PAPER->"Papel";ProductType.MEDICINE->"Farmacia";ProductType.CLOTHES->"Ropa";ProductType.TOOLS->"Herramientas";ProductType.OTHER->"Otros"
 }
+internal fun productAccent(type:ProductType):Color=when(type){ProductType.VEGETABLES,ProductType.FRUIT->Mint;ProductType.MEAT,ProductType.FISH->Peach;ProductType.DAIRY,ProductType.YOGURT,ProductType.CHEESE,ProductType.EGGS->Blue;ProductType.CLEANING,ProductType.HYGIENE,ProductType.PAPER,ProductType.MEDICINE->Lilac;else->Color(0xFF8C7948)}
 @Composable internal fun ShoppingInput(value:String,change:(String)->Unit,add:()->Unit,scan:()->Unit,enabled:Boolean=true){
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
         OutlinedTextField(value,change,Modifier.weight(1f),singleLine=true,enabled=enabled,placeholder={Text("Añadir producto")},shape=RoundedCornerShape(18.dp),keyboardOptions=KeyboardOptions(imeAction=ImeAction.Done),keyboardActions=KeyboardActions(onDone={if(value.isNotBlank())add()}),trailingIcon={IconButton(enabled=enabled&&value.isNotBlank(),onClick=add){Icon(Icons.Default.Add,"Añadir producto")}})
@@ -26,10 +28,10 @@ internal fun productLabel(type:ProductType)=when(type){
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun ShoppingRow(product:Shopping,detail:String,selecting:Boolean,checked:Boolean,canWrite:Boolean=true,buy:(()->Unit)?=null,select:()->Unit={},edit:()->Unit={},remove:()->Unit={},repeat:(()->Unit)?=null){
     var menu by remember(product.id){mutableStateOf(false)}
-    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).combinedClickable(enabled=canWrite,onClick={if(selecting)select()else edit()},onLongClick=select).padding(end=4.dp),verticalAlignment=Alignment.CenterVertically){
+    Row(Modifier.fillMaxWidth().background(if(selecting&&checked)MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).combinedClickable(enabled=canWrite,onClick={if(selecting)select()else edit()},onLongClick=select).padding(end=4.dp),verticalAlignment=Alignment.CenterVertically){
         if(selecting||buy!=null)Checkbox(checked=selecting&&checked,onCheckedChange={if(selecting)select()else if(it)buy?.invoke()},enabled=canWrite)
         else Spacer(Modifier.width(12.dp))
-        ProductGlyph(product.name,Modifier.size(26.dp));Spacer(Modifier.width(10.dp))
+        Box(Modifier.size(40.dp).background(soft(productAccent(productType(product.name)),.18f),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){ProductGlyph(product.name,Modifier.size(25.dp))};Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f).padding(vertical=12.dp)){
             Text(product.name,style=MaterialTheme.typography.bodyLarge)
             if(detail.isNotBlank())Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

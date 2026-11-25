@@ -34,7 +34,7 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
     var dateText by rememberSaveable{mutableStateOf(LocalDate.now().toString())}
     val date=LocalDate.parse(dateText)
     var mode by rememberSaveable{mutableStateOf("Semana")}
-    var selectedId by remember{mutableStateOf<String?>(null)}
+    var selectedId by rememberSaveable{mutableStateOf<String?>(null)}
     var selectedExternal by remember{mutableStateOf<ExternalEvent?>(null)}
     val selected=sessions.find{it.id==selectedId}
     val taskMap=remember(tasks){tasks.associateBy{it.id}}
@@ -108,7 +108,7 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
     selected?.let{s->SessionDetails(s,taskMap[s.taskId],sessions,tasks,external,{selectedId=null},{v->save(v);selectedId=null},{delete(s);selectedId=null},{t->selectedId=null;edit(t)})}
     selectedExternal?.let{e->AlertDialog(onDismissRequest={selectedExternal=null},title={Text(e.title)},text={Text(dayLabel(sessionDate(e.start))+" · "+time(e.start)+" – "+time(e.end)+"\nGoogle Calendar · solo lectura")},confirmButton={TextButton(onClick={selectedExternal=null}){Text("Cerrar")}})}
 }
-@Composable private fun eventBackground(e:AgendaEvent)=if(e.session?.isBreak==true)MaterialTheme.colorScheme.surfaceVariant else soft(if(e.external!=null)Lilac else taskColor(e.task),if(e.session?.done==true).10f else .25f)
+@Composable private fun eventBackground(e:AgendaEvent)=if(e.session?.isBreak==true)MaterialTheme.colorScheme.surfaceVariant else soft(if(e.external!=null)Lilac else taskColor(e.task),if(e.session?.done==true).13f else .34f)
 @Composable private fun eventAccent(e:AgendaEvent)=if(e.session?.isBreak==true)MaterialTheme.colorScheme.outline else if(e.external!=null)Lilac else taskColor(e.task)
 
 @Composable private fun TimeGrid(days:List<LocalDate>,selected:LocalDate,events:List<AgendaEvent>,modifier:Modifier,choose:(LocalDate)->Unit,open:(AgendaEvent)->Unit){
