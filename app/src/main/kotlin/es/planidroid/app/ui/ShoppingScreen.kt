@@ -30,34 +30,64 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 
 @Composable fun ShoppingScreen(shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,listId:String="",listName:String="Mi compra",back:()->Unit={},share:(()->Unit)?=null){
-    var scan by remember{mutableStateOf(false)};var quick by remember{mutableStateOf("")};var view by remember{mutableStateOf("Lista")};var edit by remember{mutableStateOf<Shopping?>(null)};var remove by remember{mutableStateOf<Shopping?>(null)};var undo by remember{mutableStateOf<Purchase?>(null)}
-    var selecting by remember(listId){mutableStateOf(false)};var selectedIds by remember(listId){mutableStateOf(emptySet<String>())};var confirmDelete by remember{mutableStateOf(false)}
-    var recipes by remember{mutableStateOf(false)}
+    var scan by remember(listId){mutableStateOf(false)};var quick by remember(listId){mutableStateOf("")}
+    var view by remember(listId){mutableStateOf("Lista")};var edit by remember{mutableStateOf<Shopping?>(null)};var undo by remember{mutableStateOf<Purchase?>(null)}
+    var selectedIds by remember(listId){mutableStateOf(emptySet<String>())};var selecting by remember(listId){mutableStateOf(false)};var confirmDelete by remember{mutableStateOf(false)}
+    var recipes by remember{mutableStateOf(false)};var menu by remember{mutableStateOf(false)}
     val uid by model.scope.collectAsStateWithLifecycle()
     val pending=shopping.filter{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        item{
-            TextButton(onClick=back){Text("‹ Listas")}
-            Row(verticalAlignment=Alignment.CenterVertically){Text(listName,Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);if(share!=null)IconButton(onClick=share){Icon(Icons.Default.Share,"Compartir lista")}}
-            Text(pending.size.toString()+" pendientes",color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                OutlinedTextField(quick,{quick=it},Modifier.weight(1f),singleLine=true,placeholder={Text("Añadir producto…")},shape=RoundedCornerShape(18.dp))
-                FilledIconButton(onClick={model.saveShopping(ShoppingText.parse(quick,listId));quick=""},enabled=quick.isNotBlank()){Icon(Icons.Default.Add,"Añadir")}
-                IconButton(onClick={scan=true}){Icon(Icons.Default.CameraAlt,"Leer pizarra")}
-            }
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("Lista","Rutina","Historial").forEach{v->FilterChip(view==v,{view=v;selecting=false;selectedIds=emptySet()},label={Text(v)})}}
-            if(view!="Historial")Row(verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selecting=!selecting;selectedIds=emptySet()}){Text(if(selecting)"Cancelar selección" else "Seleccionar productos")};if(selecting)TextButton(onClick={selectedIds=(if(view=="Rutina")shopping.filter{it.routine}else pending).map{it.id}.toSet()}){Text("Todos")};if(selecting)IconButton(enabled=selectedIds.isNotEmpty(),onClick={confirmDelete=true}){Icon(Icons.Default.Delete,"Eliminar seleccionados",tint=MaterialTheme.colorScheme.error)}}
-            if(view!="Historial")OutlinedButton(onClick={recipes=true}){Icon(Icons.Default.AutoAwesome,null);Text(" Recetas con Gemini")}
-            if(view!="Historial")TextButton(onClick={edit=Shopping(name="",unit="",listId=listId,quantitySpecified=false)}){Text("Añadir con detalles")}
+    val shown=if(view=="Rutina")shopping.filter{it.routine}else pending
+    val visibleIds=shown.map{it.id}.toSet();val selected=selectedIds.intersect(visibleIds)
+    fun select(id:String){selecting=true;selectedIds=if(id in selectedIds)selectedIds-id else selectedIds+id}
+    fun clear(){selecting=false;selectedIds=emptySet()}
+    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)){
+        Row(verticalAlignment=Alignment.CenterVertically){
+            IconButton(onClick=back){Icon(Icons.Default.ArrowBack,"Volver a listas")}
+            Column(Modifier.weight(1f)){Text(listName,style=MaterialTheme.typography.titleLarge);Text(pending.size.toString()+" pendientes",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            if(share!=null)IconButton(onClick=share){Icon(Icons.Default.Share,"Compartir")}
+            Box{IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Acciones de lista")};DropdownMenu(menu,{menu=false}){
+                DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;edit=Shopping(name="",unit="",listId=listId,quantitySpecified=false)})
+                DropdownMenuItem(text={Text("Recetas con Gemini")},leadingIcon={Icon(Icons.Default.AutoAwesome,null)},onClick={menu=false;recipes=true})
+                if(view!="Historial")DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;selecting=true})
+            }}
         }
-        if(view=="Historial") {if(history.isEmpty())item{Text("Aún no hay compras registradas.")};history.sortedByDescending{it.boughtAt}.groupBy{sessionDate(it.boughtAt)}.forEach{(day,list)->item{Text(day.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy",java.util.Locale("es","ES"))),style=MaterialTheme.typography.titleMedium)};items(list,key={it.id}){p->GlassCard(tint=Mint){Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(p.name,Modifier.size(24.dp));Spacer(Modifier.width(8.dp));Text(p.name,style=MaterialTheme.typography.titleMedium)};Text((if(p.quantitySpecified)amountText(p.quantity)+" "+p.unit+" · " else "")+time(p.boughtAt)+(if(p.undone)" · Anulada" else ""));Row{TextButton(onClick={model.repeatPurchase(p,false)}){Text("Volver a añadir")};if(!p.undone)TextButton(onClick={undo=p}){Text("Deshacer compra")}}}}}}
-        else {val shown=if(view=="Rutina")shopping.filter{it.routine} else pending;if(shown.isEmpty())item{GlassCard(tint=Mint){Text(if(view=="Rutina")"Crea tus compras habituales" else "Todo al día",style=MaterialTheme.typography.titleMedium);Text("Las reposiciones aparecen cuando el stock baja del mínimo.")}};items(shown.sortedBy{it.name.lowercase()},key={it.id}){s->val i=inventory.find{it.id==s.itemId};val n=ShoppingLogic.needed(s,i);GlassCard(tint=Mint){Row(verticalAlignment=Alignment.CenterVertically){if(selecting)Checkbox(s.id in selectedIds,{v->selectedIds=if(v)selectedIds+s.id else selectedIds-s.id})else if(view=="Lista")Checkbox(false,{if(it)model.buy(s.id)});ProductGlyph(s.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(s.name,style=MaterialTheme.typography.titleMedium);if(s.quantitySpecified||(s.routine&&i!=null&&i.amount<s.minimum)) Text((amountText(if(n>0)n else s.quantity)+" "+s.unit).trim(),style=MaterialTheme.typography.labelMedium);if(i!=null)Text("Stock ${amountText(i.amount)} · mínimo ${amountText(s.minimum)}",style=MaterialTheme.typography.bodySmall)};if(!selecting)IconButton(onClick={edit=s}){Icon(Icons.Default.Edit,"Editar")}};Row{if(view=="Rutina"&&n<=0)TextButton(onClick={model.save(s.copy(pending=true))}){Text("Añadir a la lista")};if(!selecting)TextButton(onClick={remove=s}){Text("Eliminar")}}}}}
+        if(!selecting)ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Lista","Rutina","Historial").forEach{v->FilterChip(view==v,{view=v;clear()},label={Text(v)})}}
+        if(selecting)ShoppingSelection(selected.size,shown.size,{selectedIds=if(selected==visibleIds)emptySet()else visibleIds},::clear,{confirmDelete=true})
+        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            if(view=="Historial"){
+                if(history.isEmpty())item{Text("Todavía no hay compras.",modifier=Modifier.padding(12.dp))}
+                history.sortedByDescending{it.boughtAt}.groupBy{sessionDate(it.boughtAt)}.forEach{(day,list)->
+                    item{Text(day.format(DateTimeFormatter.ofPattern("d MMMM yyyy",java.util.Locale("es","ES"))),style=MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=10.dp,bottom=4.dp))}
+                    items(list,key={it.id}){p->
+                        var actions by remember(p.id){mutableStateOf(false)}
+                        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface,RoundedCornerShape(12.dp)).padding(8.dp),verticalAlignment=Alignment.CenterVertically){
+                            ProductGlyph(p.name,Modifier.size(26.dp));Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(p.name);Text((if(p.quantitySpecified)amountText(p.quantity)+" "+p.unit+" · " else "")+time(p.boughtAt)+(if(p.undone)" · Anulada" else ""),style=MaterialTheme.typography.bodySmall)}
+                            Box{IconButton(onClick={actions=true}){Icon(Icons.Default.MoreVert,"Opciones de compra")};DropdownMenu(actions,{actions=false}){DropdownMenuItem(text={Text("Volver a añadir")},onClick={actions=false;model.repeatPurchase(p,false)});if(!p.undone)DropdownMenuItem(text={Text("Deshacer compra")},onClick={actions=false;undo=p})}}
+                        }
+                    }
+                }
+            }else{
+                if(shown.isEmpty())item{Text(if(view=="Rutina")"No hay compras habituales" else "Todo al día",modifier=Modifier.padding(12.dp),style=MaterialTheme.typography.titleMedium)}
+                shown.groupBy{productType(it.name)}.toSortedMap(compareBy{productLabel(it)}).forEach{(type,products)->
+                    item{Text(productLabel(type),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=12.dp,bottom=4.dp,start=4.dp))}
+                    items(products.sortedBy{it.name.lowercase()},key={it.id}){p->
+                        val i=inventory.find{it.id==p.itemId};val n=ShoppingLogic.needed(p,i)
+                        val quantity=if(p.quantitySpecified||(p.routine&&i!=null&&i.amount<p.minimum))(amountText(if(n>0)n else p.quantity)+" "+p.unit).trim()else ""
+                        val detail=listOfNotNull(quantity.takeIf{it.isNotBlank()},i?.let{"Stock "+amountText(it.amount)}).joinToString(" · ")
+                        ShoppingRow(p,detail,selecting,p.id in selected,buy=if(view=="Lista")({model.buy(p.id)})else null,select={select(p.id)},edit={edit=p},remove={selectedIds=setOf(p.id);selecting=true;confirmDelete=true},repeat=if(view=="Rutina"&&n<=0)({model.save(p.copy(pending=true))})else null)
+                    }
+                }
+            }
+        }
     }
-    if(confirmDelete)Confirm("Eliminar "+selectedIds.size+" productos","Se quitarán de esta lista sin registrar compras. El historial anterior se conserva.",{confirmDelete=false},{model.deleteShopping(selectedIds,listId);selectedIds=emptySet();selecting=false})
+    if(confirmDelete)Confirm("Eliminar "+selected.size+" productos","No se registrarán como compras; el historial anterior se conserva.",{confirmDelete=false},{model.deleteShopping(selected,listId);clear()})
     if(recipes)RecipeSuggestions(uid,pending,listId,{recipes=false},{model.saveShopping(it)})
     if(scan)ShoppingScan(listId,{scan=false},{model.saveShopping(it);scan=false})
-    edit?.let{s->ShoppingEditor(s,inventory,{edit=null},{model.save(it);edit=null})};remove?.let{s->Confirm("Quitar ${s.name}","Se conserva el historial de compras.",{remove=null},{model.delete(s.id,Kind.SHOPPING)})};undo?.let{p->Confirm("Deshacer compra","Volverá a la lista. Se revertirá el stock si no ha cambiado después de esta compra.",{undo=null},{model.repeatPurchase(p,true)})}
+    edit?.let{p->ShoppingEditor(p,inventory,{edit=null},{model.save(it);edit=null})}
+    undo?.let{p->Confirm("Deshacer compra","Volverá a la lista y se revertirá el stock si no ha cambiado.",{undo=null},{model.repeatPurchase(p,true)})}
 }
+
 @Composable fun ShoppingEditor(initial:Shopping,inventory:List<Item>,close:()->Unit,save:(Shopping)->Unit){var s by remember(initial){mutableStateOf(initial)};var q by remember{mutableStateOf(if(s.quantitySpecified)amountText(s.quantity)else "")};var min by remember{mutableStateOf(amountText(s.minimum))};var target by remember{mutableStateOf(amountText(s.target))};val n=q.replace(',','.').toDoubleOrNull();val m=min.replace(',','.').toDoubleOrNull();val t=target.replace(',','.').toDoubleOrNull();val ok=s.name.isNotBlank()&&(q.isBlank()||(n!=null&&n.isFinite()&&n>0))&&m!=null&&m.isFinite()&&m>=0&&t!=null&&t.isFinite()&&t>=m
     AlertDialog(onDismissRequest=close,title={Text("Producto de compra")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Field(s.name,{s=s.copy(name=it,icon=guessIcon(it))},"Nombre");Field(q,{q=it},"Cantidad");Field(s.unit,{s=s.copy(unit=it)},"Unidad");Row(verticalAlignment=Alignment.CenterVertically){Switch(s.routine,{s=s.copy(routine=it)});Text(" Compra de rutina")};if(s.routine){Choice("Vincular al inventario",listOf("")+inventory.map{it.id},s.itemId,{id->inventory.find{it.id==id}?.name?:"Sin vincular"}){id->val i=inventory.find{it.id==id};s=s.copy(itemId=id,name=i?.name?:s.name,unit=i?.unit?:s.unit,icon=i?.icon?:s.icon)};if(s.itemId.isNotBlank()){Field(min,{min=it},"Stock mínimo");Field(target,{target=it},"Stock deseado");Text("Al comprar, el stock vinculado aumentará.",style=MaterialTheme.typography.bodySmall)}}}},confirmButton={TextButton(enabled=ok,onClick={save(s.copy(name=s.name.trim(),quantity=n?:1.0,quantitySpecified=q.isNotBlank(),unit=if(q.isBlank())"" else s.unit,minimum=m!!,target=t!!,itemId=if(s.routine)s.itemId else ""))}){Text("Guardar")}},dismissButton={TextButton(onClick=close){Text("Cancelar")}})
 }
