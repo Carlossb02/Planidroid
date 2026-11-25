@@ -57,7 +57,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         if(updatedTask!=null){require(updatedTask.title.isNotBlank()&&updatedTask.minutes in 1..100000);dao.save(uid,updatedTask.id,Kind.TASK.name,encode(updatedTask))}
         for(update in updates){val old=dao.get(uid,update.id)?.takeUnless{it.deleted}?.let{decode<Task>(it.payload)}?:error("La tarea ya no existe");require(update.minutes in 0..100000);dao.save(uid,old.id,Kind.TASK.name,encode(old.copy(minutes=update.minutes,planHints=update.planHints,overlapWith=update.overlapWith)))}
         val rows=dao.all(uid).filterNot{it.deleted};val current=rows.filter{it.kind==Kind.SESSION.name}.map{decode<Session>(it.payload)};val tasks=rows.filter{it.kind==Kind.TASK.name}.map{decode<Task>(it.payload)}
-        require(replacing.all{old->current.contains(old)&&!old.done&&old.start>System.currentTimeMillis()&&(updatedTask==null||old.taskId==updatedTask.id||allowBatch)}){"El calendario ha cambiado; recalcula antes de aceptar"}
+        require(replacing.all{old->current.contains(old)&&!old.done&&old.start>System.currentTimeMillis()&&old.calendarTitle.isBlank()&&(updatedTask==null||old.taskId==updatedTask.id||allowBatch)}){"El calendario ha cambiado; recalcula antes de aceptar"}
         val busy=current.filterNot{it in replacing}.toMutableList();val externalBusy=es.planidroid.app.sync.CalendarSync.events(getApplication(),uid).filter{it.busy}
         require(!OverlapPolicy.revokedConflict(busy,priorTasks,tasks,System.currentTimeMillis())){"Hay sesiones que se solapan con un permiso retirado. Reorganízalas antes de guardar."}
         for(s in proposed.sortedBy{it.start}){val t=tasks.find{it.id==s.taskId}?:error("La tarea ya no existe");require(TaskConstraints.unmet(t,tasks).isEmpty()&&t.status !in listOf(Status.DONE,Status.ARCHIVED,Status.BLOCKED));require(s.start>=System.currentTimeMillis()&&s.end>s.start&&PlanningPreferences.fits(s,t)&&(t.due.isBlank()||java.time.Instant.ofEpochMilli(s.end-1).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let{d->if(t.planHints.finishBeforeDeadline)d<java.time.LocalDate.parse(t.due)else d<=java.time.LocalDate.parse(t.due)})&&busy.none{OverlapPolicy.conflict(s,it,tasks)}&&externalBusy.none{it.start<s.end&&it.end>s.start}){"Conflicto de horario; vuelve a calcular"};busy+=s}
@@ -86,6 +86,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
             dao.save(uid,current.id,Kind.PURCHASE.name,encode(current.copy(undone=true)))
         }
     } } }
+    fun deleteShopping(ids:Set<String>,listId:String){val uid=scope.value;run{db.withTransaction{ids.forEach{id->val row=dao.get(uid,id);if(row!=null&&!row.deleted&&row.kind==Kind.SHOPPING.name&&decode<Shopping>(row.payload).listId==listId)dao.remove(uid,id)}}}}
     fun delete(id: String,kind: Kind) { val s=scope.value; run { db.withTransaction {
         val all=dao.all(s).filterNot { it.deleted }
         when(kind) {

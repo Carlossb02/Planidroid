@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 @Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>)->Unit,external:List<Interval> = emptyList(),allTasks:List<Task> = emptyList(),uid:String="local",openAgenda:(Task)->Unit={}){
     val today=LocalDate.now()
     val capturedNow=remember(task.id){System.currentTimeMillis()}
-    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow}
+    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow&&it.calendarTitle.isBlank()}
     val kept=existing.filterNot{it in previous}
     val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
     val otherReserved=kept.filter{it.taskId==task.id&&!it.done}.sumOf{((it.end-it.start)/60000).toInt()}

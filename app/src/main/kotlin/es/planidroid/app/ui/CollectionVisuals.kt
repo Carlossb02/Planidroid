@@ -37,8 +37,11 @@ import es.planidroid.app.domain.*
     }
 }
 @Composable fun ProductGlyph(name:String,modifier:Modifier=Modifier){
-    val icon=when(productType(name)){
+    val type=productType(name)
+    if(type in listOf(ProductType.YOGURT,ProductType.CHEESE,ProductType.MEAT,ProductType.VEGETABLES)){FoodOutline(type,modifier);return}
+    val icon=when(type){
         ProductType.DAIRY->Icons.Outlined.LocalDrink
+        ProductType.YOGURT->Icons.Outlined.LocalDrink
         ProductType.CHEESE->Icons.Outlined.Restaurant
         ProductType.EGGS->Icons.Outlined.Egg
         ProductType.FRUIT->Icons.Outlined.Apple
@@ -66,6 +69,22 @@ import es.planidroid.app.domain.*
             Column(Modifier.weight(1f)){Text(title,style=MaterialTheme.typography.titleMedium);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(shared)Icon(Icons.Outlined.People,"Compartido",Modifier.size(20.dp))
             Icon(Icons.Outlined.ChevronRight,null)
+        }
+    }
+}
+
+@Composable private fun FoodOutline(type:ProductType,modifier:Modifier){
+    val c=MaterialTheme.colorScheme.onSurface
+    Canvas(modifier.padding(2.dp)){
+        val w=size.width;val h=size.height;val stroke=Stroke(w*.065f,cap=StrokeCap.Round)
+        fun line(a:Float,b:Float,x:Float,y:Float)=drawLine(c,Offset(w*a,h*b),Offset(w*x,h*y),w*.065f,StrokeCap.Round)
+        fun oval(a:Float,b:Float,x:Float,y:Float)=drawOval(c,Offset(w*a,h*b),Size(w*x,h*y),style=stroke)
+        fun poly(vararg xy:Float){val p=androidx.compose.ui.graphics.Path();p.moveTo(w*xy[0],h*xy[1]);for(i in 2 until xy.size step 2)p.lineTo(w*xy[i],h*xy[i+1]);p.close();drawPath(p,c,style=stroke)}
+        when(type){
+            ProductType.YOGURT->{poly(.19f,.29f,.81f,.29f,.69f,.88f,.31f,.88f);line(.13f,.22f,.87f,.22f);line(.60f,.19f,.80f,.06f)}
+            ProductType.CHEESE->{poly(.10f,.50f,.62f,.13f,.91f,.49f,.91f,.82f,.10f,.82f);line(.10f,.50f,.91f,.49f);oval(.33f,.58f,.14f,.13f);oval(.66f,.62f,.12f,.12f)}
+            ProductType.MEAT->{oval(.10f,.17f,.76f,.68f);oval(.25f,.30f,.37f,.32f);line(.66f,.33f,.77f,.55f)}
+            else->{poly(.19f,.40f,.52f,.32f,.67f,.49f,.24f,.91f);line(.50f,.33f,.60f,.10f);line(.55f,.33f,.83f,.17f);line(.59f,.38f,.89f,.36f);line(.30f,.52f,.40f,.60f);line(.23f,.66f,.32f,.73f)}
         }
     }
 }
