@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
     var from by remember{mutableStateOf("00:00")};var until by remember{mutableStateOf("00:00")}
     var max by remember{mutableStateOf("180")};var margin by remember{mutableStateOf("0")}
     var exceptions by remember{mutableStateOf("")};var advanced by remember{mutableStateOf(false)}
+    var includeToday by remember{mutableStateOf(true)}
     var replan by remember{mutableStateOf(draft!=null)};var days by remember{mutableStateOf(DayOfWeek.entries.toSet())}
     var proposal by remember{mutableStateOf<AgendaProposal?>(null)};var replacing by remember{mutableStateOf(emptyList<Session>())}
     var approvedUpdates by remember{mutableStateOf(emptyList<Task>())}
@@ -71,6 +72,7 @@ import kotlinx.coroutines.launch
                     Row(verticalAlignment=Alignment.CenterVertically){
                         Switch(replan,{replan=it;reset()});Text("Reorganizar sesiones futuras",Modifier.padding(start=8.dp))
                     }
+                    Row(verticalAlignment=Alignment.CenterVertically){Switch(includeToday,{includeToday=it;reset()});Text("Puedo empezar hoy",Modifier.padding(start=8.dp))}
                     TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar disponibilidad" else "Ajustar disponibilidad")}
                     if(advanced){
                         DateField(end,{end=it;reset()},"Último día",false)
@@ -137,7 +139,7 @@ import kotlinx.coroutines.launch
                                 val phaseBudgets=t.phases.filterNot{it.done}.map{p->p.id to (p.minutes-maxOf(p.actualMinutes,kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&s.done}.sumOf{s->((s.end-s.start)/60000).toInt()})-kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&!s.done}.sumOf{s->((s.end-s.start)/60000).toInt()}).coerceAtLeast(0)}
                                 AgendaInput(t.id,t.title,TaskConstraints.remaining(t,kept),t.due.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it).minusDays(buffer)}?:last,t.priority.ordinal,phaseBudgets,t.startDate.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it)})
                             }
-                            val p=AgendaPlanner.plan(inputs,today,last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),external+excluded,zone,existing=kept,tasks=updates)
+                            val p=AgendaPlanner.plan(inputs,if(includeToday)today else today.plusDays(1),last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),external+excluded,zone,minStart=System.currentTimeMillis()+30_000L,existing=kept,tasks=updates)
                             require(replacements.none{old->p.deficits.any{it.taskId==old.taskId}}){"Una tarea existente perdería tiempo reservado. Amplía el horario o desmarca esa tarea."}
                             Triple(p,replacements,updates.filter{u->tasks.find{it.id==u.id}!=u})
                         }.onSuccess{(p,old,updates)->proposal=p;replacing=old;approvedUpdates=updates;error=if(p.blocks.isEmpty())"No hay sesiones nuevas que reservar. Revisa el tiempo y los días disponibles." else ""}
@@ -161,7 +163,7 @@ import kotlinx.coroutines.launch
                         if(p.blocks.any{other->other.taskId!=b.taskId&&other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)}||kept.any{other->other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)})Text("Solapamiento autorizado",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
                     }}
                     if(p.breaks.isNotEmpty())item{GlassCard(tint=Mint){Text("Descansos sugeridos",style=MaterialTheme.typography.titleMedium);p.breaks.take(50).forEach{Text(sessionDate(it.start).toString()+" · "+time(it.start)+" – "+time(it.end))}}}
-                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates)}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
+                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={if(p.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){reset();error="El horario ha avanzado. Calcula de nuevo."}else{submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates)}}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
                 }
                 item{TextButton(onClick=close){Text("Cancelar")}}
             }

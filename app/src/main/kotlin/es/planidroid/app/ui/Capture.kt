@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
     var connect by remember{mutableStateOf(false)}
     fun interpret() {
         val request=input.trim()
+        if(request.isBlank()||busy)return
         busy=true; error=""
         coroutine.launch {
             try {
@@ -57,7 +58,7 @@ import kotlinx.coroutines.launch
                     Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
                     Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
                     OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
-                    TextButton(onClick={manual(if(input.isBlank())Task(title="")else CaptureParser.parse(input).first().let{it.copy(description=input.trim())})},enabled=!busy,modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Edit,null);Spacer(Modifier.width(8.dp));Text("Editar manualmente")}
+                    TextButton(onClick={manual(if(input.isBlank())Task(title="")else CaptureParser.parse(input).firstOrNull()?.let{it.copy(description=input.trim())}?:Task(title=input.trim().take(180)))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Edit,null);Spacer(Modifier.width(8.dp));Text("Editar manualmente")}
                     Button(onClick={if(!AiConfig.configured(context,uid))connect=true else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
@@ -75,7 +76,7 @@ import kotlinx.coroutines.launch
                         var details by remember { mutableStateOf(false) }
                         fun update(t:Task){draft=draft.orEmpty().map{if(it.id==task.id)t else it}}
                         GlassCard(tint=categoryColor(task.category)) {
-                            Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Checklist,null,tint=categoryColor(task.category));Spacer(Modifier.width(8.dp));Text(task.title,Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);IconButton(onClick={manual(task)}){Icon(Icons.Default.Edit,"Abrir formulario completo")}}
+                            Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Checklist,null,tint=categoryColor(task.category));Spacer(Modifier.width(8.dp));Text(task.title,Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);if(draft.orEmpty().size==1&&questions.isEmpty())IconButton(onClick={manual(task)}){Icon(Icons.Default.Edit,"Abrir formulario completo")}}
                             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                 if(task.due.isNotBlank()) Text(task.due,style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
                                 if(task.minutes>0) Text("${task.minutes} min",style=MaterialTheme.typography.labelLarge)
