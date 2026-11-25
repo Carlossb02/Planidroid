@@ -34,6 +34,9 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
     fun saveTasks(tasks:List<Task>){val uid=scope.value;run{db.withTransaction{tasks.forEach{dao.save(uid,it.id,Kind.TASK.name,encode(it))}};tasks.forEach{Reminders.update(getApplication(),uid,it)}}}
     fun save(t: Task) { val s=scope.value; run { var next:Task?=null;db.withTransaction{val old=dao.get(s,t.id)?.takeUnless{it.deleted}?.let{decode<Task>(it.payload)};dao.save(s,t.id,Kind.TASK.name,encode(t));if(old?.status!=Status.DONE){RepeatingTasks.next(t)?.let{n->if(dao.get(s,n.id)==null){dao.save(s,n.id,Kind.TASK.name,encode(n));next=n}}}};Reminders.update(getApplication(),s,t);next?.let{Reminders.update(getApplication(),s,it);message.value="Siguiente ocurrencia creada: ${it.due}"} } }
     fun logFocus(taskId:String,minutes:Int){val uid=scope.value;run{require(minutes in 1..1440);db.withTransaction{val row=dao.get(uid,taskId)?.takeUnless{it.deleted}?:error("La tarea ya no existe");val t=decode<Task>(row.payload);dao.save(uid,t.id,Kind.TASK.name,encode(t.copy(actualMinutes=(t.actualMinutes+minutes).coerceAtMost(100000))))};message.value="Registrados $minutes minutos de concentración"}}
+    fun save(h: Home) { val uid=scope.value;run { dao.save(uid,h.id,Kind.HOME.name,encode(h)) } }
+    fun save(l: ShoppingList) { val uid=scope.value;run { dao.save(uid,l.id,Kind.SHOPPING_LIST.name,encode(l)) } }
+    fun saveShopping(items:List<Shopping>) { val uid=scope.value;run { db.withTransaction { items.forEach{dao.save(uid,it.id,Kind.SHOPPING.name,encode(it))} } } }
     fun save(f: Furniture) { val s=scope.value; run { dao.save(s,f.id,Kind.FURNITURE.name,encode(f)) } }
     fun save(i: Item) { val s=scope.value; run { dao.save(s,i.id,Kind.ITEM.name,encode(i)) } }
     fun save(g: Group) { val s=scope.value; run { dao.save(s,g.id,Kind.GROUP.name,encode(g)) } }
@@ -51,7 +54,7 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         val s=decode<Shopping>(row.payload)
         val i=dao.get(uid,s.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
         val n=ShoppingLogic.needed(s,i); if(n<=0)return@withTransaction
-        val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon)
+        val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon,listId=s.listId,quantitySpecified=s.quantitySpecified||(i!=null&&s.routine&&i.amount<s.minimum))
         if(i!=null)dao.save(uid,i.id,Kind.ITEM.name,encode(i.copy(amount=i.amount+n,quantity=amountText(i.amount+n))))
         dao.save(uid,p.id,Kind.PURCHASE.name,encode(p));dao.save(uid,s.id,Kind.SHOPPING.name,encode(s.copy(pending=false)))
     } } }
@@ -59,7 +62,7 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         val current=dao.get(uid,p.id)?.takeUnless{it.deleted}?.let{decode<Purchase>(it.payload)} ?: return@withTransaction
         if(undo && current.undone)return@withTransaction
         val old=dao.get(uid,current.shoppingId)?.takeUnless{it.deleted}?.let{decode<Shopping>(it.payload)}
-        val s=old?.copy(pending=true,quantity=current.quantity) ?: Shopping(name=current.name,quantity=current.quantity,unit=current.unit,routine=current.routine,icon=current.icon)
+        val s=old?.copy(pending=true,quantity=current.quantity,quantitySpecified=current.quantitySpecified) ?: Shopping(name=current.name,quantity=current.quantity,unit=current.unit,routine=current.routine,icon=current.icon,listId=current.listId,quantitySpecified=current.quantitySpecified)
         dao.save(uid,s.id,Kind.SHOPPING.name,encode(s))
         if(undo){ val item=dao.get(uid,current.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
             if(ShoppingLogic.canUndo(current,item) && item!=null){ val n=current.stockBefore!!;dao.save(uid,item.id,Kind.ITEM.name,encode(item.copy(amount=n,quantity=amountText(n)))) }
@@ -72,6 +75,8 @@ class PlanidroidModel(app: Application): AndroidViewModel(app) {
         when(kind) {
             Kind.TASK -> {all.filter { it.kind==Kind.SESSION.name && decode<Session>(it.payload).taskId==id }.forEach { dao.remove(s,it.id) };all.filter{it.kind==Kind.TASK.name&&it.id!=id}.map{decode<Task>(it.payload)}.filter{id in it.dependencies}.forEach{dao.save(s,it.id,Kind.TASK.name,encode(it.copy(dependencies=it.dependencies-id)))}}
             Kind.FURNITURE -> all.filter { it.kind==Kind.ITEM.name && decode<Item>(it.payload).furnitureId==id }.forEach { dao.remove(s,it.id) }
+            Kind.HOME -> {require(all.none{it.kind==Kind.FURNITURE.name&&decode<Furniture>(it.payload).homeId==id}){"Mueve los muebles antes de eliminar el hogar"}}
+            Kind.SHOPPING_LIST -> {require(all.none{(it.kind==Kind.SHOPPING.name&&decode<Shopping>(it.payload).listId==id)||(it.kind==Kind.PURCHASE.name&&decode<Purchase>(it.payload).listId==id)}){"La lista contiene productos o historial"}}
             Kind.GROUP -> all.filter { it.kind==Kind.TASK.name }.map { decode<Task>(it.payload) }.filter { it.groupId==id }.forEach { dao.save(s,it.id,Kind.TASK.name,encode(it.copy(groupId=""))) }
             else -> Unit
         }; dao.remove(s,id)

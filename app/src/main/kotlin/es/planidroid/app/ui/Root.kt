@@ -42,6 +42,8 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val tasks=remember(rows){ rows.filter{it.kind==Kind.TASK.name}.mapNotNull { runCatching{decode<Task>(it.payload)}.getOrNull() } }
     val sessions=remember(rows){ rows.filter{it.kind==Kind.SESSION.name}.mapNotNull { runCatching{decode<Session>(it.payload)}.getOrNull() } }
     val furniture=remember(rows){ rows.filter{it.kind==Kind.FURNITURE.name}.mapNotNull { runCatching{decode<Furniture>(it.payload)}.getOrNull() } }
+    val homes=remember(rows){rows.filter{it.kind==Kind.HOME.name}.mapNotNull{runCatching{decode<Home>(it.payload)}.getOrNull()}}
+    val shoppingLists=remember(rows){rows.filter{it.kind==Kind.SHOPPING_LIST.name}.mapNotNull{runCatching{decode<ShoppingList>(it.payload)}.getOrNull()}}
     val inventory=remember(rows){ rows.filter{it.kind==Kind.ITEM.name}.mapNotNull { runCatching{decode<Item>(it.payload)}.getOrNull() } }
     val groups=remember(rows){ rows.filter{it.kind==Kind.GROUP.name}.mapNotNull { runCatching{decode<Group>(it.payload)}.getOrNull() } }
     val shopping=remember(rows){rows.filter{it.kind==Kind.SHOPPING.name}.mapNotNull{runCatching{decode<Shopping>(it.payload)}.getOrNull()}}
@@ -62,8 +64,8 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->model.save(created);plan=created;tab=Tab.TASKS})
                 Tab.ASSISTANT->AssistantScreen(scope,tasks){model.saveTasks(it)}
                 Tab.SPACES->Column(Modifier.fillMaxSize()){Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={tab=Tab.INVENTORY},modifier=Modifier.weight(1f)){Icon(Icons.Default.Home,null);Text(" Hogar")};OutlinedButton(onClick={tab=Tab.SHOPPING},modifier=Modifier.weight(1f)){Icon(Icons.Default.ShoppingCart,null);Text(" Compra")}};TextButton(onClick={tab=Tab.SHARED},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.People,null);Text(" Compartido")};TextButton(onClick={tab=Tab.ASSISTANT},modifier=Modifier.padding(horizontal=18.dp)){Icon(Icons.Default.AutoAwesome,null);Text(" Asistente")};Spaces(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it})}
-                Tab.INVENTORY->InventoryScreen(furniture,inventory,model)
-                Tab.SHOPPING->ShoppingScreen(shopping,purchases,inventory,model)
+                Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)
+                Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
                 Tab.SHARED->SharedScreen(scope)
                 Tab.SETTINGS->SettingsScreen(model,scope,theme,glass)
             }}
