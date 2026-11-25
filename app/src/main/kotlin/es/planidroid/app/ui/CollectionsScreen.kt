@@ -38,7 +38,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
             finally{busy=false}
-            finished?.invoke(error.ifBlank{null})
+            finished?.invoke(error.takeIf{it.isNotBlank()})
         }
     }
     suspend fun observe(){api?.observeCached()?.collect{r->spaces=r.first;invites=r.second}}
@@ -199,7 +199,9 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     val currentFurniture=remoteFurniture.find{it.id==remote}
     val localFurniture=if(current?.local!=null)furniture.filter{it.homeId==(if(current.local.id==legacy.id)"" else current.local.id)&&current.children.none{c->c.role=="owner"&&c.sourceId==it.id}}else emptyList()
     BackHandler(selected!=null||remote!=null||privateOpen){when{remote!=null->remote=null;privateOpen->privateOpen=false;else->selected=null}}
-    val privateLists=lists.filter{l->access.spaces.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==l.id}}
+    val privateLists=lists.filter{l->access.spaces.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==l.id}}.let{available->
+        if(access.spaces.any{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId=="legacy-shopping"})available.ifEmpty{listOf(ShoppingList(id="inventory-restock-list",name="Reposición"))}else available+ShoppingList(id="",name="Mi compra")
+    }
     if(currentFurniture!=null)SharedFurnitureDetail(currentFurniture,access,{remote=null},{invite=currentFurniture.id},uid,model,privateLists)
     else if(current!=null&&privateOpen&&current.local!=null){
         InventoryScreen(localFurniture,inventory.filter{it.furnitureId in localFurniture.map{f->f.id}},model,if(current.local.id==legacy.id)""else current.local.id,current.title,{privateOpen=false},{f->if(uid=="local")online("compartir este mueble")else publishFurniture=f},privateLists)

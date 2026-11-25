@@ -74,6 +74,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     fun restockItem(expected:Item,products:List<Shopping>,listId:String,localInventory:Boolean=true,finished:(String?)->Unit={}){
         stockAction({uid->db.withTransaction{
             require(products.isNotEmpty()&&products.size<=100)
+            if(listId=="inventory-restock-list"&&dao.get(uid,listId)==null)dao.save(uid,listId,Kind.SHOPPING_LIST.name,encode(ShoppingList(id=listId,name="Reposición")))
             if(listId.isNotBlank())require(dao.get(uid,listId)?.let{!it.deleted&&it.kind==Kind.SHOPPING_LIST.name}==true){"La lista ya no existe"}
             val current=if(localInventory){
                 val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:error("El producto ya no existe")
@@ -113,6 +114,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         val s=decode<Shopping>(row.payload)
         val i=dao.get(uid,s.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
         val n=ShoppingLogic.needed(s,i); if(n<=0)return@withTransaction
+        require(i==null||InventoryConsumption.unitKey(s.unit)==InventoryConsumption.unitKey(i.unit)){"Las unidades de compra e inventario no coinciden. Edita el producto."}
         val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon,listId=s.listId,quantitySpecified=s.quantitySpecified||(i!=null&&s.routine&&i.amount<s.minimum),referenceUrl=s.referenceUrl,referenceTitle=s.referenceTitle)
         if(i!=null)dao.save(uid,i.id,Kind.ITEM.name,encode(i.copy(amount=i.amount+n,quantity=amountText(i.amount+n),restockAmount=0.0)))
         dao.save(uid,p.id,Kind.PURCHASE.name,encode(p));dao.save(uid,s.id,Kind.SHOPPING.name,encode(s.copy(pending=false)))

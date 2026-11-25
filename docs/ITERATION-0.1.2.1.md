@@ -1,0 +1,7 @@
+# 0.1.2.1 — consumo y reposición
+- Botón Consumir en contenido privado y compartido editable, cantidad parcial o total en la unidad del producto, sin stock negativo. Mantiene registro a cero, borra caducidad agotada y muestra sugerencia persistente en cabecera. Se puede descartar sin bloquear.
+- Tipo de contenido automático por nombre/categoría, editable: ingrediente, receta/plato preparado, otro producto. Reconocimiento local heurístico, no IA en consumo.
+- Ingrediente/otro: elegir lista personal y cantidad/unidad. Si coincide con el artículo privado, la compra repone el stock vinculado; evita duplicados pendientes en la lista seleccionada. Receta: ingredientes manuales o sugeridos por Gemini solo bajo petición, o compra de plato preparado. No consume automáticamente los ingredientes de una receta ya cocinada.
+- En muebles compartidos la reposición se anota en una lista personal, sin enlace a stock compartido. Se conserva la cola de sincronización existente; la confirmación de lista personal y el descarte compartido son operaciones separadas. Los editores de muebles compartidos pueden consumir o descartar sugerencias; lectores no.
+- Datos de consumo (tipo y cantidad sugerida) en el JSON sincronizado, con valores predeterminados compatibles. No requiere cambiar Firebase. No se generan compras al consumir.
+- Tests de stock parcial/total, decimales, clasificación y deduplicación. Verificar CI y dispositivo antes de instalar.
