@@ -17,6 +17,6 @@ object CaptureParser {
         val title=StudyIntent.examTitle(line,date)?:line.replace(Regex("^(tengo que|necesito|quiero|debo)\\s+",RegexOption.IGNORE_CASE),"").substringBefore(',').trim().take(180).replaceFirstChar{it.uppercase()}.ifBlank{"Pendiente"}
         val recurring=Regex("\\b(al día|cada día|por día|diarias?|cada semana|semanales?|a la semana|por semana)\\b").containsMatchIn(lower)
         val hints=SmartCapture.hints(line,date,today)
-        original.copy(planHints=hints,title=title,description=if(title.equals(line,true))"" else line,category=if(date.isNotBlank())Category.DEADLINE else if(lower.contains("próximamente"))Category.SOON else Category.INBOX,due=date,minutes=SmartCapture.totalMinutes(line).takeIf{it>0}?:if(hints.minutesPerTopic>0&&hints.topicCount>0)StudyIntent.studyMinutes(hints,hints.topicCount)else 0)
+        original.copy(planHints=hints,title=title,description=if(title.equals(line,true))"" else line,category=if(date.isNotBlank())Category.DEADLINE else if(lower.contains("próximamente"))Category.SOON else Category.INBOX,due=date,minutes=SmartCapture.totalMinutes(line).takeIf{it>0}?:if(hints.minutesPerTopic>0&&hints.topicCount>0)runCatching{StudyIntent.studyMinutes(hints,hints.topicCount)}.getOrDefault(0)else 0)
     }
 }

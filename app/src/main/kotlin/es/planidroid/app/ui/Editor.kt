@@ -35,45 +35,119 @@ import java.time.*
     phaseEdit?.let{p->PhaseDetail(p,{phaseEdit=null},{v->t=t.copy(phases=t.phases.map{if(it.id==v.id)v else it});phaseEdit=null})}
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
-@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>)->Unit,external:List<Interval> = emptyList()){
+@Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(Task,List<Session>,List<Session>)->Unit,external:List<Interval> = emptyList()){
     val today=LocalDate.now()
+    val capturedNow=remember(task.id){System.currentTimeMillis()}
+    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow}
+    val kept=existing.filterNot{it in previous}
+    val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
+    val otherReserved=kept.filter{it.taskId==task.id&&!it.done}.sumOf{((it.end-it.start)/60000).toInt()}
+    var hints by remember(task.id){mutableStateOf(task.planHints)}
     var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
     var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
-    var from by remember(task.id){mutableStateOf("09:00")}
-    var until by remember(task.id){mutableStateOf("19:00")}
-    var max by remember(task.id){mutableStateOf("60")}
-    var daily by remember(task.id){mutableStateOf(task.planHints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
-    var minutes by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,existing).takeIf{it>0}?.toString().orEmpty())}
-    var days by remember(task.id){mutableStateOf(DayOfWeek.entries.filter{it.value !in task.planHints.excludedWeekdays}.toSet())}
+    var from by remember(task.id){mutableStateOf(hints.windowStart.ifBlank{"09:00"})}
+    var until by remember(task.id){mutableStateOf(hints.windowEnd.ifBlank{"19:00"})}
+    var max by remember(task.id){mutableStateOf(hints.sessionLimit.coerceIn(1,1440).toString())}
+    var daily by remember(task.id){mutableStateOf(hints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
+    var countText by remember(task.id){mutableStateOf(hints.topicCount.takeIf{it>0}?.toString().orEmpty())}
+    var minutesText by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,kept).takeIf{it>0}?.toString().orEmpty())}
+    var days by remember(task.id){mutableStateOf(StudyIntent.availableDays(hints))}
+    var revision by remember(task.id){mutableStateOf("")}
+    var feedback by remember(task.id){mutableStateOf("")}
     var advanced by remember{mutableStateOf(false)}
     var approved by remember(task.id){mutableStateOf(false)}
-    val result=remember(task,existing,external,start,deadline,from,until,max,daily,minutes,days){
-        runCatching{SmartPlan.propose(task,existing,external,maxOf(today,LocalDate.parse(start)),LocalDate.parse(deadline),days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),minutes.toInt(),daily.ifBlank{"0"}.toInt())}.getOrNull()
+    val count=StudyIntent.topicsAnswer(countText)
+    val total=if(hints.minutesPerTopic>0)count?.let{runCatching{StudyIntent.studyMinutes(hints,it)}.getOrNull()} else minutesText.toIntOrNull()?.takeIf{it in 1..100000}?.let{(it.toLong()+doneMinutes+otherReserved).takeIf{n->n<=100000}?.toInt()}
+    val remaining=total?.let{(it-doneMinutes-otherReserved).coerceAtLeast(0)}
+    val last=runCatching{LocalDate.parse(deadline).let{if(hints.finishBeforeDeadline)it.minusDays(1)else it}}.getOrNull()
+    val result=remember(task,kept,external,start,last,from,until,max,daily,remaining,days){
+        if(last==null||remaining==null||remaining<=0)null
+        else runCatching{SmartPlan.propose(task,kept,external,maxOf(today,LocalDate.parse(start)),last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),remaining,daily.ifBlank{"0"}.toInt())}.getOrNull()
+    }
+    val weekdayLabels=listOf("Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo")
+    val shortLabels=listOf("L","M","X","J","V","S","D")
+    fun applyRevision(){
+        val next=StudyIntent.reviseAvailability(revision,hints)
+        val n=StudyIntent.topicsAnswer(revision)
+        if(next==null&&n==null){feedback="Indica los días disponibles o el número de temas.";return}
+        if(next!=null){hints=next;days=StudyIntent.availableDays(next)}
+        if(n!=null&&hints.minutesPerTopic>0)countText=n.toString()
+        revision="";feedback="Propuesta recalculada. Revisa las sesiones."
+    }
+    fun toggleDay(day:DayOfWeek){
+        days=if(day in days)days-day else days+day
+        hints=hints.copy(availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=hints.excludedWeekdays.filterNot{it==day.value})
+        feedback=""
     }
     Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){
         Surface(Modifier.fillMaxWidth().fillMaxHeight(.95f).padding(10.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(24.dp)){
-            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
                 item{
-                    Section("Tu plan",task.title)
-                    if(task.planHints.explanation.isNotBlank())Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
-                    Field(minutes,{minutes=it},"Tiempo pendiente (min)")
-                    Text("Fecha límite: "+deadline,style=MaterialTheme.typography.titleMedium)
-                    Text("Disponibilidad propuesta: "+from+" – "+until+". Confirma que se ajusta a tu horario.",style=MaterialTheme.typography.bodySmall)
-                    TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar horario" else "Ajustar disponibilidad")}
-                    if(advanced){
-                        DateField(start,{start=it},"Desde",false);DateField(deadline,{deadline=it},"Hasta",false)
-                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(from,{from=it},"Desde HH:mm")};Column(Modifier.weight(1f)){Field(until,{until=it},"Hasta HH:mm")}}
-                        Field(max,{max=it},"Máximo por sesión (min)");Field(daily,{daily=it},"Máximo diario (opcional)")
-                        DayOfWeek.entries.chunked(4).forEach{group->Row(horizontalArrangement=Arrangement.spacedBy(3.dp)){group.forEach{d->FilterChip(d in days,{days=if(d in days)days-d else days+d},label={Text(listOf("L","M","X","J","V","S","D")[d.value-1])})}}}
+                    Section(if(previous.isEmpty())"Tu plan" else "Reorganizar mi agenda",task.title)
+                    Text("Fecha límite: "+deadline,style=MaterialTheme.typography.labelLarge)
+                    if(hints.minutesPerTopic>0){
+                        Text("¿Cuántos temas tienes que estudiar?",style=MaterialTheme.typography.titleLarge)
+                        Text((hints.minutesPerTopic/60.0).let{if(it%1.0==0.0)it.toInt().toString() else it.toString()}+" h por tema",style=MaterialTheme.typography.bodyMedium)
+                        Field(countText,{countText=it},"Número de temas")
+                        if(total!=null)Text(total.toString()+" min en total · "+remaining+" min pendientes",style=MaterialTheme.typography.titleMedium)
+                    }else{
+                        if(hints.explanation.isNotBlank())Text(hints.explanation,style=MaterialTheme.typography.bodySmall)
+                        Field(minutesText,{minutesText=it},"Tiempo pendiente (min)")
                     }
-                    if(result==null)Text("Indica el tiempo y revisa la disponibilidad para obtener una propuesta.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    else GlassCard(tint=if(result.missingMinutes==0)Mint else Peach){
-                        Text(if(result.missingMinutes==0)"Todo encaja" else "Faltan "+result.missingMinutes+" min",style=MaterialTheme.typography.titleLarge)
-                        Text(result.intervals.size.toString()+" sesiones · "+result.intervals.sumOf{(it.end-it.start)/60000}+" min reservados")
+                    if(previous.isNotEmpty())Text("Se sustituirán "+previous.size+" sesiones futuras. El trabajo completado se conserva.",style=MaterialTheme.typography.bodySmall)
+                }
+                item{
+                    GlassCard(tint=Blue){
+                        Text("Cuándo puedes estudiar",style=MaterialTheme.typography.titleLarge)
+                        if(hints.daysPerWeek>0&&hints.availableWeekdays.isEmpty())Text("Propuesta de "+hints.daysPerWeek+" días semanales. Puedes cambiarlos.",style=MaterialTheme.typography.bodySmall)
+                        Text(days.sortedBy{it.value}.joinToString(", "){weekdayLabels[it.value-1]}.ifBlank{"Selecciona al menos un día"},style=MaterialTheme.typography.bodyMedium)
+                        Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
+                            DayOfWeek.entries.forEach{d->FilterChip(selected=d in days,onClick={toggleDay(d)},label={Text(shortLabels[d.value-1])},modifier=Modifier.weight(1f))}
+                        }
+                        Field(revision,{revision=it.take(300)},"Cambiar con texto")
+                        OutlinedButton(onClick={applyRevision()},enabled=revision.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Recalcular")}
+                        if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
+                        Text("Horario propuesto: "+from+" – "+until,style=MaterialTheme.typography.labelMedium)
+                        TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar ajustes" else "Ajustar horario y duración")}
+                        if(advanced){
+                            DateField(start,{start=it},"Desde",false);DateField(deadline,{deadline=it},"Fecha límite",false)
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(from,{from=it},"Desde HH:mm")};Column(Modifier.weight(1f)){Field(until,{until=it},"Hasta HH:mm")}}
+                            Field(max,{max=it},"Máximo por sesión (min)");Field(daily,{daily=it},"Máximo diario (opcional)")
+                        }
                     }
                 }
-                result?.intervals?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->item{Text(day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMM",java.util.Locale("es","ES"))),style=MaterialTheme.typography.titleMedium)};items(blocks.size){i->val s=blocks[i];GlassCard(tint=Blue){Text(time(s.start)+" – "+time(s.end),style=MaterialTheme.typography.titleMedium);Text(((s.end-s.start)/60000).toString()+" min")}}}
-                item{Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true,onClick={val r=result?:return@Button;approved=true;val already=existing.filter{it.taskId==task.id};val recorded=maxOf(task.actualMinutes,already.filter{it.done}.sumOf{((it.end-it.start)/60000).toInt()});val reserved=already.filterNot{it.done}.sumOf{((it.end-it.start)/60000).toInt()};val updated=task.copy(minutes=(minutes.toInt()+recorded+reserved).coerceAtMost(100000),due=deadline,category=Category.DEADLINE,startDate=start,planHints=task.planHints.copy(dailyMinutes=daily.ifBlank{"0"}.toInt(),excludedWeekdays=DayOfWeek.entries.filterNot{it in days}.map{it.value}));accept(updated,r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)})},modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)"Añadir a mi agenda" else "Aceptar plan parcial")};TextButton(onClick=close){Text("Cancelar")}}
+                item{
+                    when{
+                        hints.minutesPerTopic>0&&total==null->Text("Indica cuántos temas hay para generar una planificación real.",style=MaterialTheme.typography.bodyMedium)
+                        days.isEmpty()->Text("Selecciona tus días de estudio.",color=MaterialTheme.colorScheme.error)
+                        remaining==0->Text("Ya has reservado o completado todo el tiempo necesario.")
+                        result==null->Text("Revisa la fecha, la duración y el horario.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        else->GlassCard(tint=if(result.missingMinutes==0)Mint else Peach){
+                            Text(if(result.missingMinutes==0)"Tu planificación" else "Faltan "+result.missingMinutes+" min",style=MaterialTheme.typography.titleLarge)
+                            Text(result.intervals.map{sessionDate(it.start)}.distinct().size.toString()+" días · "+result.intervals.sumOf{(it.end-it.start)/60000}+" min reservados")
+                            if(hints.finishBeforeDeadline)Text("El día del examen queda libre.",style=MaterialTheme.typography.bodySmall)
+                            if(result.missingMinutes>0)Text("Amplía el horario o añade días. No se han reservado horas que no caben.",style=MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                result?.intervals?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->
+                    item{
+                        GlassCard(tint=Blue){
+                            Text(day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM",java.util.Locale("es","ES"))).replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.titleMedium)
+                            Text(blocks.sumOf{(it.end-it.start)/60000}.toString()+" min de estudio",style=MaterialTheme.typography.labelLarge)
+                            blocks.forEach{s->Text(time(s.start)+" – "+time(s.end),style=MaterialTheme.typography.bodyMedium)}
+                        }
+                    }
+                }
+                item{
+                    Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true&&total!=null,onClick={
+                        val r=result?:return@Button;val effort=total?:return@Button
+                        approved=true
+                        val updated=task.copy(minutes=effort,due=deadline,category=Category.DEADLINE,startDate=start,planHints=hints.copy(topicCount=count?:hints.topicCount,dailyMinutes=daily.ifBlank{"0"}.toInt(),availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,windowStart=from,windowEnd=until,sessionLimit=max.toInt(),explanation=""))
+                        accept(updated,r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)},previous)
+                    },modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)if(previous.isEmpty())"Guardar tarea y agenda" else "Guardar nueva planificación" else "Aceptar plan parcial")}
+                    TextButton(onClick=close){Text("Cancelar")}
+                }
             }
         }
     }

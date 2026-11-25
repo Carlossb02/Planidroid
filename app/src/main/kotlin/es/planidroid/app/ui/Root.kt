@@ -74,7 +74,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
         }
         edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId=""));edit=null},tasks) }
         if(agendaPlan)AgendaEditor(tasks,sessions,{agendaPlan=false},{new,old->model.commitPlan(new,old);agendaPlan=false;tab=Tab.CALENDAR},blocked)
-        plan?.let { t -> PlanDialog(t,sessions,{plan=null},{updated,blocks->model.commitPlan(blocks,emptyList(),updated);plan=null;tab=Tab.CALENDAR},blocked) }
+        plan?.let { t -> PlanDialog(t,sessions,{plan=null},{updated,blocks,replacing->model.commitPlan(blocks,replacing,updated);plan=null;tab=Tab.CALENDAR},blocked) }
         }
         onlineFeature?.let{feature->OnlineSignInDialog(feature,model,scope){onlineFeature=null}}
     }
