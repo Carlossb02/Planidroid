@@ -1,0 +1,4 @@
+# Optional template only. Copy to local.properties if SDK auto-detection fails.
+# Set sdk.dir to your actual installed Android SDK directory.
+# sdk.dir=C:/Users/YOUR_USERNAME/AppData/Local/Android/Sdk
+# Never add API keys or other credentials to this template.

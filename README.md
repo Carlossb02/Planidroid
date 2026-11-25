@@ -15,6 +15,11 @@ Captura de tareas exclusivamente mediante texto: interpretación local o Gemini 
 2. Android Studio → Open → carpeta Planidroid. Instala SDK Android 35 y selecciona JDK 17 para Gradle. Sync Project with Gradle Files.
 3. Selecciona `app` y un móvil/emulador Android 8 (API 26) o superior. Run. O ejecuta ` .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest `; APK esperado: `app/build/outputs/apk/debug/Planidroid_v0.1.0.0.apk`.
 
+### Ubicación del SDK (configuración local)
+Al sincronizar Gradle se genera `local.properties` si no existe y se detecta un SDK instalado en `ANDROID_HOME`, `ANDROID_SDK_ROOT` o en las rutas habituales de Windows, macOS o Linux. No se sobrescribe una configuración existente. Si la detección falla, instala Android SDK 35 y copia `local.properties.example` a `local.properties`, descomentando y ajustando `sdk.dir` a tu ruta real.
+
+`local.properties` permanece ignorado por Git y bloqueado por los controles de secretos. Solo se versiona la plantilla sin datos privados; no guardes claves en ella.
+
 No necesitas credenciales para usar el modo local. AGP 8.7.3, Gradle 8.9, Kotlin 2.0.21, Room 2.7.0, Compose BOM 2024.10.01. Versiones fijadas, no se afirma que sean las más recientes. **No se ha compilado ni instalado el APK**: no hay Android SDK/Gradle en el entorno y las descargas fallan. La revisión sintáctica y las comprobaciones JVM se detallan en `docs/verification.txt`. Las pruebas instrumentadas, compilación completa y Emulator Suite no se han ejecutado. No utilizar datos reales de varias cuentas hasta probar las reglas de seguridad.
 
 ## Recorrido por la app
