@@ -36,10 +36,45 @@ import java.time.*
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
 @Composable fun PlanDialog(task:Task,existing:List<Session>,close:()->Unit,accept:(List<Session>)->Unit,external:List<Interval> = emptyList()){
-    var start by remember{mutableStateOf(task.startDate.ifBlank{LocalDate.now().toString()})};var deadline by remember{mutableStateOf(task.due.ifBlank{LocalDate.now().plusDays(7).toString()})};var from by remember{mutableStateOf("09:00")};var until by remember{mutableStateOf("19:00")};var length by remember{mutableStateOf("60")};var minutes by remember{mutableStateOf(TaskConstraints.remaining(task,existing).toString())};var days by remember{mutableStateOf(DayOfWeek.values().toList().toSet())};var result by remember{mutableStateOf<PlanResult?>(null)};var error by remember{mutableStateOf("")}
-    fun invalidate(){result=null;error=""}
-    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){Surface(Modifier.fillMaxWidth().fillMaxHeight(.95f).padding(10.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(22.dp)){LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-        item{Section("Planificar",task.title);Field(minutes,{minutes=it;invalidate()},"Minutos necesarios");DateField(start,{start=it;invalidate()},"Desde",false);DateField(deadline,{deadline=it;invalidate()},"Hasta",false);Field(from,{from=it;invalidate()},"Hora de inicio HH:mm");Field(until,{until=it;invalidate()},"Hora final HH:mm");Field(length,{length=it;invalidate()},"Máximo por sesión (min)");Text("Días disponibles");DayOfWeek.values().toList().chunked(4).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){row.forEach{d->FilterChip(d in days,{days=if(d in days)days-d else days+d;invalidate()},label={Text(listOf("L","M","X","J","V","S","D")[d.value-1])})}}};Button(onClick={runCatching{Planner.plan(PlanRequest(minutes.toInt(),LocalDate.parse(start),LocalDate.parse(deadline),days,LocalTime.parse(from),LocalTime.parse(until),length.toInt(),existing.map{Interval(it.start,it.end)}+external))}.onSuccess{result=it;error=""}.onFailure{error="Revisa fechas, horas y duración (máximo 366 días).";result=null}}){Text("Calcular propuesta")};if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error);result?.let{r->Text(if(r.missingMinutes==0)"Plan viable" else "Faltan ${r.missingMinutes} minutos disponibles",style=MaterialTheme.typography.titleMedium);Text("${r.intervals.size} sesiones propuestas; no se modifican sesiones existentes.")}}
-        result?.let{r->items(r.intervals.size){i->val s=r.intervals[i];Text("${sessionDate(s.start)} · ${time(s.start)} – ${time(s.end)}")};item{Button(enabled=r.intervals.isNotEmpty(),onClick={accept(r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)})}){Text(if(r.missingMinutes>0)"Aceptar plan parcial" else "Aceptar plan")}}};item{TextButton(onClick=close){Text("Cancelar")}}
-    }}}
+    val today=LocalDate.now()
+    var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
+    var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
+    var from by remember(task.id){mutableStateOf("09:00")}
+    var until by remember(task.id){mutableStateOf("19:00")}
+    var max by remember(task.id){mutableStateOf("60")}
+    var daily by remember(task.id){mutableStateOf(task.planHints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
+    var minutes by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,existing).takeIf{it>0}?.toString().orEmpty())}
+    var days by remember(task.id){mutableStateOf(DayOfWeek.entries.filter{it.value !in task.planHints.excludedWeekdays}.toSet())}
+    var advanced by remember{mutableStateOf(false)}
+    var approved by remember(task.id){mutableStateOf(false)}
+    val result=remember(task,existing,external,start,deadline,from,until,max,daily,minutes,days){
+        runCatching{SmartPlan.propose(task,existing,external,maxOf(today,LocalDate.parse(start)),LocalDate.parse(deadline),days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),minutes.toInt(),daily.ifBlank{"0"}.toInt())}.getOrNull()
+    }
+    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){
+        Surface(Modifier.fillMaxWidth().fillMaxHeight(.95f).padding(10.dp),shape=androidx.compose.foundation.shape.RoundedCornerShape(24.dp)){
+            LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                item{
+                    Section("Tu plan",task.title)
+                    if(task.planHints.explanation.isNotBlank())Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
+                    Field(minutes,{minutes=it},"Tiempo pendiente (min)")
+                    Text("Fecha límite: "+deadline,style=MaterialTheme.typography.titleMedium)
+                    Text("Disponibilidad propuesta: "+from+" – "+until+". Confirma que se ajusta a tu horario.",style=MaterialTheme.typography.bodySmall)
+                    TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar horario" else "Ajustar disponibilidad")}
+                    if(advanced){
+                        DateField(start,{start=it},"Desde",false);DateField(deadline,{deadline=it},"Hasta",false)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(from,{from=it},"Desde HH:mm")};Column(Modifier.weight(1f)){Field(until,{until=it},"Hasta HH:mm")}}
+                        Field(max,{max=it},"Máximo por sesión (min)");Field(daily,{daily=it},"Máximo diario (opcional)")
+                        DayOfWeek.entries.chunked(4).forEach{group->Row(horizontalArrangement=Arrangement.spacedBy(3.dp)){group.forEach{d->FilterChip(d in days,{days=if(d in days)days-d else days+d},label={Text(listOf("L","M","X","J","V","S","D")[d.value-1])})}}}
+                    }
+                    if(result==null)Text("Indica el tiempo y revisa la disponibilidad para obtener una propuesta.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    else GlassCard(tint=if(result.missingMinutes==0)Mint else Peach){
+                        Text(if(result.missingMinutes==0)"Todo encaja" else "Faltan "+result.missingMinutes+" min",style=MaterialTheme.typography.titleLarge)
+                        Text(result.intervals.size.toString()+" sesiones · "+result.intervals.sumOf{(it.end-it.start)/60000}+" min reservados")
+                    }
+                }
+                result?.intervals?.groupBy{sessionDate(it.start)}?.forEach{(day,blocks)->item{Text(day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMM",java.util.Locale("es","ES"))),style=MaterialTheme.typography.titleMedium)};items(blocks.size){i->val s=blocks[i];GlassCard(tint=Blue){Text(time(s.start)+" – "+time(s.end),style=MaterialTheme.typography.titleMedium);Text(((s.end-s.start)/60000).toString()+" min")}}}
+                item{Button(enabled=!approved&&result?.intervals?.isNotEmpty()==true,onClick={val r=result?:return@Button;approved=true;accept(r.intervals.map{Session(taskId=task.id,start=it.start,end=it.end)})},modifier=Modifier.fillMaxWidth()){Text(if(result?.missingMinutes==0)"Añadir a mi agenda" else "Aceptar plan parcial")};TextButton(onClick=close){Text("Cancelar")}}
+            }
+        }
+    }
 }

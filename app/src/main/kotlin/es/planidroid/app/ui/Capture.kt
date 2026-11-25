@@ -64,6 +64,8 @@ import kotlinx.coroutines.launch
                                 if(task.minutes>0) Text("${task.minutes} min",style=MaterialTheme.typography.labelLarge)
                                 if(task.phases.isNotEmpty()) Text("${task.phases.size} fases",style=MaterialTheme.typography.labelLarge)
                             }
+                            if(task.minutes==0&&task.planHints.explanation.isNotBlank()) Text(task.planHints.explanation,style=MaterialTheme.typography.bodySmall)
+                            if(task.planHints.dailyMinutes>0) Text("Máximo diario: "+task.planHints.dailyMinutes+" min",style=MaterialTheme.typography.bodySmall)
                             task.phases.take(8).forEach{Text("• ${it.title}",style=MaterialTheme.typography.bodyMedium)}
                             TextButton(onClick={details=!details}){Text(if(details)"Ocultar detalles" else "Ajustar detalles")}
                             if(details){Field(task.description,{update(task.copy(description=it))},"Notas",false);DateField(task.due,{update(task.copy(due=it,category=if(it.isBlank())Category.INBOX else Category.DEADLINE))},"Fecha límite");Field(if(task.minutes==0)"" else task.minutes.toString(),{v->if(v.isBlank())update(task.copy(minutes=0))else v.toIntOrNull()?.takeIf{it in 1..100000}?.let{update(task.copy(minutes=it))}},"Duración (min)")}
@@ -73,7 +75,7 @@ import kotlinx.coroutines.launch
                     val tasks=draft.orEmpty()
                     val valid=!submitted&&tasks.isNotEmpty()&&tasks.all{it.title.isNotBlank()&&(it.category!=Category.DEADLINE||it.due.isNotBlank())&&(it.due.isBlank()||runCatching{java.time.LocalDate.parse(it.due)}.isSuccess)}
                     Button(enabled=valid,onClick={submitted=true;save(tasks)},modifier=Modifier.fillMaxWidth().height(56.dp)){Text(if(tasks.size==1)"Guardar tarea" else "Guardar ${tasks.size} tareas")}
-                    if(tasks.size==1&&tasks.first().minutes>0) OutlinedButton(enabled=valid,onClick={submitted=true;plan(tasks.first())},modifier=Modifier.fillMaxWidth()){Text("Guardar y planificar")}
+                    if(tasks.size==1) OutlinedButton(enabled=valid,onClick={submitted=true;val t=tasks.first();plan(if(t.minutes==0&&t.phases.isEmpty())t.copy(minutes=t.planHints.suggestedMinutes)else t)},modifier=Modifier.fillMaxWidth()){Text("Guardar y planificar")}
                     TextButton(onClick={draft=null;submitted=false;error=""},modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Volver al texto")}
                 }
             }

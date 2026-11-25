@@ -4,7 +4,7 @@ import java.time.LocalDate
 class LocalAi:AiProvider {
     override suspend fun parseNaturalLanguage(text:String):AiProposal {
         val lines=text.lines().map{it.trim()}.filter{it.isNotBlank()}.take(30)
-        val tasks=lines.map{LocalParser.parse(it)}
+        val tasks=CaptureParser.parse(lines.joinToString("\n"))
         return AiProposal(tasks,uncertainties=if(tasks.any{it.minutes==0})listOf("La duración no está indicada inequívocamente.")else emptyList(),assumptions=listOf("Cada línea se interpreta como una tarea independiente."),confidence=0.5)
     }
     override suspend fun suggestTaskBreakdown(task:Task):AiProposal {
