@@ -28,9 +28,9 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
         private set
     var error by mutableStateOf("")
         private set
-    fun work(refresh:Boolean=true,action:suspend (SharedCloud)->Unit={}){
-        val cloud=api?:return
-        if(busy)return
+    fun work(refresh:Boolean=true,finished:((String?)->Unit)?=null,action:suspend (SharedCloud)->Unit={}){
+        val cloud=api?:run{finished?.invoke("Sin acceso compartido");return}
+        if(busy){finished?.invoke("Hay otra operación en curso");return}
         busy=true;error=""
         scope.launch{
             try{action(cloud);val r=if(refresh)cloud.list()else cloud.cached();spaces=r.first;invites=r.second}
@@ -38,6 +38,7 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
             finally{busy=false}
+            finished?.invoke(error.ifBlank{null})
         }
     }
     suspend fun observe(){api?.observeCached()?.collect{r->spaces=r.first;invites=r.second}}
@@ -94,7 +95,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     },confirmButton={Button(enabled=!busy&&email.isNotBlank(),onClick={val target=email;work{api.invite(space,target,role);email=""}}){Text("Invitar")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cerrar")}})
 }
 
-@Composable fun ShoppingListsScreen(uid:String,lists:List<ShoppingList>,shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel){
+@Composable fun ShoppingListsScreen(uid:String,lists:List<ShoppingList>,shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,lists:List<ShoppingList> = emptyList()){
     val access=collectionAccess(uid);val online=LocalOnlineAccess.current
     val legacy=ShoppingList(id="legacy-shopping",name="Mi compra")
     val local=lists+if(lists.isEmpty()||shopping.any{it.listId.isBlank()}||history.any{it.listId.isBlank()})listOf(legacy)else emptyList()
@@ -198,9 +199,10 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     val currentFurniture=remoteFurniture.find{it.id==remote}
     val localFurniture=if(current?.local!=null)furniture.filter{it.homeId==(if(current.local.id==legacy.id)"" else current.local.id)&&current.children.none{c->c.role=="owner"&&c.sourceId==it.id}}else emptyList()
     BackHandler(selected!=null||remote!=null||privateOpen){when{remote!=null->remote=null;privateOpen->privateOpen=false;else->selected=null}}
-    if(currentFurniture!=null)SharedFurnitureDetail(currentFurniture,access,{remote=null},{invite=currentFurniture.id})
+    val privateLists=lists.filter{l->access.spaces.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==l.id}}
+    if(currentFurniture!=null)SharedFurnitureDetail(currentFurniture,access,{remote=null},{invite=currentFurniture.id},uid,model,privateLists)
     else if(current!=null&&privateOpen&&current.local!=null){
-        InventoryScreen(localFurniture,inventory.filter{it.furnitureId in localFurniture.map{f->f.id}},model,if(current.local.id==legacy.id)""else current.local.id,current.title,{privateOpen=false},{f->if(uid=="local")online("compartir este mueble")else publishFurniture=f})
+        InventoryScreen(localFurniture,inventory.filter{it.furnitureId in localFurniture.map{f->f.id}},model,if(current.local.id==legacy.id)""else current.local.id,current.title,{privateOpen=false},{f->if(uid=="local")online("compartir este mueble")else publishFurniture=f},privateLists)
     }else{
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
             if(current==null){
@@ -231,15 +233,17 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     publishFurniture?.let{f->if(current?.local!=null)Confirm("Compartir solo "+f.name,"Se publicará exclusivamente este mueble y su contenido, sin fotos locales. El destinatario verá el nombre del hogar, pero no otros muebles. El original local se conserva como recuperación.",{publishFurniture=null},{val h=current.local;access.work{api->val s=api.publishFurniture(h,f,inventory);privateOpen=false;remote=s.id;invite=s.id}})}
     invite?.let{id->access.spaces.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
-@Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit){
-    val data=remember(s.id,s.version){decode<SharedFurniture>(s.body)}
+@Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit,uid:String,model:PlanidroidModel,lists:List<ShoppingList>){
+    val data=remember(s.id,s.version,s.body){decode<SharedFurniture>(s.body)}
     val f=data.furniture;val write=s.role in listOf("owner","editor","admin")
+    var consume by remember(s.id){mutableStateOf<Item?>(null)};var restock by remember(s.id){mutableStateOf<Item?>(null)}
     var layout by remember(s.id){mutableStateOf(false)}
     var edit by remember(s.id){mutableStateOf<Item?>(null)}
     var selected by remember(s.id){mutableStateOf<String?>(null)}
     fun update(next:SharedFurniture){access.work(refresh=false){it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         TextButton(onClick=back){Text("‹ Muebles")}
+        if(write){val exhausted=data.items.filter(InventoryConsumption::pending);if(exhausted.isNotEmpty())RestockBanner(exhausted,{restock=it},{old->if(!access.busy)update(data.copy(items=data.items.map{if(it.id==old.id&&InventoryConsumption.pending(it))it.copy(restockAmount=0.0)else it}))},!access.busy)}
         Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir mueble")}}
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             Column(Modifier.weight(1f)){Text("Interior");ZoneBoard(LayoutGrid.zones(f).filterNot{it.door},data.items,false,selected,{selected=it.name},{})}
@@ -249,10 +253,13 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         if(write)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=selected?:f.compartments.firstOrNull()?:"General")}){Text("Añadir contenido")};TextButton(enabled=!access.busy,onClick={layout=true}){Text("Distribución")}}
         data.items.filter{selected==null||it.compartment==selected}.forEach{i->GlassCard(tint=if(s.role=="owner")Mint else Lilac){
             Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(i.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(i.name,style=MaterialTheme.typography.titleMedium);Text(amountText(i.amount)+" "+i.unit+" · "+i.compartment,style=MaterialTheme.typography.bodySmall)};if(write)IconButton(enabled=!access.busy,onClick={edit=i}){Icon(Icons.Outlined.Edit,"Editar")}}
+            if(write)ConsumeButton(i,{consume=i},!access.busy)
         }}
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
     }
+    consume?.let{old->ConsumeDialog(old,{consume=null},{n,done->access.work(refresh=false,finished=done){api->val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible");val d=decode<SharedFurniture>(latest.body);val current=d.items.find{it.id==old.id}?:error("Producto no disponible");require(current.amount==old.amount&&current.unit==old.unit){"Las existencias han cambiado"};val next=InventoryConsumption.consume(current,n);api.update(latest,d.furniture.name,encode(d.copy(items=d.items.map{if(it.id==next.id)next else it})))}})}
+    restock?.let{old->InventoryRestockDialog(uid,old,lists,{restock=null},{products,listId,done->model.restockItem(old,products,listId,false){failure->if(failure!=null)done(failure)else access.work(refresh=false,finished=done){api->val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible");val d=decode<SharedFurniture>(latest.body);val next=d.items.map{if(it.id==old.id&&InventoryConsumption.pending(it)&&it.restockAmount==old.restockAmount)it.copy(restockAmount=0.0)else it};api.update(latest,d.furniture.name,encode(d.copy(items=next)))}}},shared=true)}
     if(layout)LayoutEditor(f,data.items,{layout=false},{update(data.copy(furniture=it));layout=false})
-    edit?.let{i->ItemEditor(i,f,{edit=null},{v->update(data.copy(items=if(data.items.any{it.id==v.id})data.items.map{if(it.id==v.id)v else it}else data.items+v));edit=null})}
+    edit?.let{i->ItemEditor(i,f,{edit=null},{v->update(data.copy(items=if(data.items.any{it.id==v.id})data.items.map{if(it.id==v.id)v.copy(restockAmount=if(v.amount>0)0.0 else v.restockAmount) else it}else data.items+v));edit=null})}
 }

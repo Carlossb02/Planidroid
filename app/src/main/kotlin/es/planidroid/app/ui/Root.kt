@@ -82,7 +82,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
                 Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);tab=Tab.TASKS},{created->plan=created;tab=Tab.TASKS},{prefill->edit=prefill},compactAvailability)
                 Tab.ASSISTANT->AssistantScreen(scope,tasks,{model.saveTasks(it)},{plan=it;tab=Tab.CALENDAR},compactAvailability)
                 Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{tab=Tab.INVENTORY},{tab=Tab.SHOPPING},{tab=Tab.SHARED},{tab=Tab.ASSISTANT},{tab=Tab.TOOLS})
-                Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model)
+                Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
                 Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
                 Tab.SHARED->SharedScreen(scope)
                 Tab.SETTINGS->SettingsScreen(model,scope)

@@ -50,7 +50,49 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     fun save(l: ShoppingList) { val uid=scope.value;run { dao.save(uid,l.id,Kind.SHOPPING_LIST.name,encode(l)) } }
     fun saveShopping(items:List<Shopping>) { val uid=scope.value;run { db.withTransaction { items.forEach{dao.save(uid,it.id,Kind.SHOPPING.name,encode(it))} } } }
     fun save(f: Furniture) { val s=scope.value; run { dao.save(s,f.id,Kind.FURNITURE.name,encode(f)) } }
-    fun save(i: Item) { val s=scope.value; run { dao.save(s,i.id,Kind.ITEM.name,encode(i)) } }
+    fun save(i: Item) { val s=scope.value; run { dao.save(s,i.id,Kind.ITEM.name,encode(i.copy(restockAmount=if(i.amount>0)0.0 else i.restockAmount))) } }
+    private fun stockAction(block:suspend (String)->Unit,finished:(String?)->Unit){
+        val uid=scope.value
+        viewModelScope.launch{try{require(scope.value==uid){"La cuenta ha cambiado"};block(uid);finished(null)}catch(e:CancellationException){throw e}catch(e:Exception){val msg=e.localizedMessage?:"No se pudo actualizar el inventario";message.value=msg;finished(msg)}}
+    }
+    fun consumeItem(expected:Item,amount:Double,finished:(String?)->Unit={}){
+        stockAction({uid->db.withTransaction{
+            val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:error("El producto ya no existe")
+            val current=decode<Item>(row.payload)
+            require(current.amount==expected.amount&&current.unit==expected.unit){"Las existencias han cambiado. Revisa la cantidad."}
+            val next=InventoryConsumption.consume(current,amount)
+            dao.save(uid,next.id,Kind.ITEM.name,encode(next))
+        }},finished)
+    }
+    fun dismissRestock(expected:Item,finished:(String?)->Unit={}){
+        stockAction({uid->db.withTransaction{
+            val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:return@withTransaction
+            val current=decode<Item>(row.payload)
+            if(InventoryConsumption.pending(current)&&current.restockAmount==expected.restockAmount)dao.save(uid,current.id,Kind.ITEM.name,encode(current.copy(restockAmount=0.0)))
+        }},finished)
+    }
+    fun restockItem(expected:Item,products:List<Shopping>,listId:String,localInventory:Boolean=true,finished:(String?)->Unit={}){
+        stockAction({uid->db.withTransaction{
+            require(products.isNotEmpty()&&products.size<=100)
+            if(listId.isNotBlank())require(dao.get(uid,listId)?.let{!it.deleted&&it.kind==Kind.SHOPPING_LIST.name}==true){"La lista ya no existe"}
+            val current=if(localInventory){
+                val row=dao.get(uid,expected.id)?.takeIf{!it.deleted&&it.kind==Kind.ITEM.name}?:error("El producto ya no existe")
+                decode<Item>(row.payload).also{require(InventoryConsumption.pending(it)&&it.restockAmount==expected.restockAmount){"Las existencias o la sugerencia han cambiado"}}
+            }else null
+            val existing=dao.all(uid).filter{!it.deleted&&it.kind==Kind.SHOPPING.name}.map{decode<Shopping>(it.payload)}.toMutableList()
+            for(p in products){
+                require(p.name.isNotBlank()&&p.quantity.isFinite()&&p.quantity>0&&p.quantity<=100000)
+                val unit=SpanishUnits.canonical(p.unit)?:error("Elige una unidad válida")
+                val link=current?.takeIf{InventoryConsumption.kind(it)!=InventoryKind.RECIPE&&InventoryConsumption.fold(it.name)==InventoryConsumption.fold(p.name)&&InventoryConsumption.unitKey(it.unit)==InventoryConsumption.unitKey(unit)}
+                val candidate=p.copy(id=newId(),name=p.name.trim(),unit=unit,listId=listId,itemId=link?.id.orEmpty(),routine=false,pending=true)
+                if(InventoryConsumption.alreadyPending(candidate,existing,current))continue
+                val old=existing.find{it.listId==listId&&link!=null&&it.itemId==link.id&&InventoryConsumption.unitKey(it.unit)==InventoryConsumption.unitKey(unit)}
+                val next=old?.copy(pending=true,quantity=candidate.quantity,quantitySpecified=true)?:candidate
+                dao.save(uid,next.id,Kind.SHOPPING.name,encode(next));existing.removeAll{it.id==next.id};existing+=next
+            }
+            if(current!=null)dao.save(uid,current.id,Kind.ITEM.name,encode(current.copy(restockAmount=0.0)))
+        };message.value="Reposición anotada en la lista"},finished)
+    }
     fun save(g: Group) { val s=scope.value; run { dao.save(s,g.id,Kind.GROUP.name,encode(g)) } }
     fun commitPlan(proposed:List<Session>,replacing:List<Session>,updatedTask:Task?=null,updates:List<Task> = emptyList(),allowBatch:Boolean=false,finished:(String?)->Unit={}){val uid=scope.value;viewModelScope.launch{try{require(scope.value==uid);db.withTransaction{
         val priorTasks=dao.all(uid).filter{it.kind==Kind.TASK.name&&!it.deleted}.map{decode<Task>(it.payload)}
@@ -72,7 +114,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         val i=dao.get(uid,s.itemId)?.takeUnless{it.deleted}?.let{decode<Item>(it.payload)}
         val n=ShoppingLogic.needed(s,i); if(n<=0)return@withTransaction
         val p=Purchase(shoppingId=s.id,name=s.name,quantity=n,unit=s.unit,routine=s.routine,itemId=i?.id.orEmpty(),stockBefore=i?.amount,stockAfter=i?.amount?.plus(n),icon=s.icon,listId=s.listId,quantitySpecified=s.quantitySpecified||(i!=null&&s.routine&&i.amount<s.minimum),referenceUrl=s.referenceUrl,referenceTitle=s.referenceTitle)
-        if(i!=null)dao.save(uid,i.id,Kind.ITEM.name,encode(i.copy(amount=i.amount+n,quantity=amountText(i.amount+n))))
+        if(i!=null)dao.save(uid,i.id,Kind.ITEM.name,encode(i.copy(amount=i.amount+n,quantity=amountText(i.amount+n),restockAmount=0.0)))
         dao.save(uid,p.id,Kind.PURCHASE.name,encode(p));dao.save(uid,s.id,Kind.SHOPPING.name,encode(s.copy(pending=false)))
     } } }
     fun repeatPurchase(p:Purchase,undo:Boolean) { val uid=scope.value; run { db.withTransaction {

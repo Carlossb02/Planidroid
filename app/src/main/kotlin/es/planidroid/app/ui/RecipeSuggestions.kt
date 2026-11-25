@@ -40,7 +40,7 @@ private fun readRecipes(body:org.json.JSONObject):List<RecipeDraft>{
             })
     }.filter{it.ingredients.isNotEmpty()}
 }
-@Composable fun RecipeSuggestions(uid:String,ingredients:List<Shopping>,listId:String,close:()->Unit,add:(List<Shopping>)->Unit){
+@Composable fun RecipeSuggestions(uid:String,ingredients:List<Shopping>,listId:String,close:()->Unit,add:(List<Shopping>)->Unit,dishName:String=""){
     val ctx=LocalContext.current;val scope=rememberCoroutineScope()
     var request by remember{mutableStateOf("")}
     var recipes by remember{mutableStateOf(emptyList<RecipeDraft>())}
@@ -52,13 +52,13 @@ private fun readRecipes(body:org.json.JSONObject):List<RecipeDraft>{
     fun choose(index:Int,list:List<RecipeDraft> = recipes){selectedRecipe=index;val items=list[index].ingredients;selected=items.indices.toSet();amounts=items.mapIndexed{i,v->i to amountText(v.amount)}.toMap();units=items.mapIndexed{i,v->i to v.unit}.toMap()}
     val valid=selected.all{i->amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
     AlertDialog(onDismissRequest={if(!busy)close()},title={Text("Recetas con Gemini")},text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
-        Text("Recetas a partir de tu lista",style=MaterialTheme.typography.labelMedium)
+        Text(if(dishName.isBlank())"Recetas a partir de tu lista" else "Ingredientes para "+dishName,style=MaterialTheme.typography.labelMedium)
         Field(request,{request=it.take(2000)},"¿Qué quieres cocinar?",false)
-        Button(enabled=!busy&&request.isNotBlank(),onClick={
+        Button(enabled=!busy&&(request.isNotBlank()||dishName.isNotBlank()),onClick={
             if(!AiConfig.configured(ctx,uid))connect=true else{busy=true;error="";scope.launch{
                 try{
                     val context=ingredients.take(40).joinToString("\n"){it.name+if(it.quantitySpecified)" · "+amountText(it.quantity)+" "+it.unit else " · cantidad no indicada"}
-                    val response=AiConfig.provider(ctx,uid).recipe(context,request)
+                    val response=AiConfig.provider(ctx,uid).recipe(context,if(dishName.isBlank())request else "Una receta de "+dishName+". "+request)
                     val result=readRecipes(response);check(result.isNotEmpty()){"No hay recetas"}
                     recipes=result;choose(0,result)
                 }catch(e:CancellationException){throw e}catch(_:Exception){error="No se pudieron generar recetas. Revisa Gemini o vuelve a intentarlo."}finally{busy=false}
