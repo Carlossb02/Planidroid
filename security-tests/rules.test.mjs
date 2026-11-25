@@ -89,3 +89,9 @@ test('Google user can register only own pending request, never overwrite or appr
  await assertFails(getDocs(collection(pending,'users/P/records')));
  await assertFails(updateDoc(path(pending),{enabled:true}));
 });
+
+test('approved account may check absent shared id for idempotent publication, not read another owner data',async()=>{
+ const a=user('A'),b=user('B');
+ await assertSucceeds(getDoc(doc(a,'sharedSpaces','not-created-yet')));
+ await assertFails(getDoc(doc(b,'sharedSpaces','space1')));
+});

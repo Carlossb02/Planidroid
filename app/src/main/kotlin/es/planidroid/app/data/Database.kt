@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 data class Record(val scope: String, val id: String, val kind: String, val payload: String, val deleted: Boolean = false, val dirty: Boolean = true, val baseVersion: Long = 0, val revision: Long = 1)
 @Dao interface RecordDao {
     @Query("SELECT * FROM records WHERE scope=:scope AND deleted=0 ORDER BY id") fun observe(scope: String): Flow<List<Record>>
+    @Query("SELECT * FROM records WHERE scope=:scope AND dirty=1 ORDER BY id") fun observeDirty(scope:String): Flow<List<Record>>
     @Query("DELETE FROM records WHERE scope=:scope") suspend fun clearScope(scope:String)
     @Query("SELECT * FROM records WHERE scope=:scope") suspend fun all(scope: String): List<Record>
     @Query("SELECT * FROM records WHERE scope=:scope AND id=:id") suspend fun get(scope: String, id: String): Record?

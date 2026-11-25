@@ -29,17 +29,19 @@ import kotlinx.coroutines.CancellationException
 @Composable fun SettingsScreen(model:PlanidroidModel,uid:String){
     val ctx=LocalContext.current;val online=LocalOnlineAccess.current;val coroutine=rememberCoroutineScope()
     val busy by model.busy.collectAsStateWithLifecycle()
-    val approval by remember(uid){Cloud.observeApproval(ctx,uid)}.collectAsStateWithLifecycle(initialValue=null)
+    val approval by model.approval.collectAsStateWithLifecycle()
     val calendar by remember(uid){ServiceHealth.observe(ctx,uid,"calendar")}.collectAsStateWithLifecycle(initialValue=false)
     val gemini by remember(uid){ServiceHealth.observe(ctx,uid,"gemini")}.collectAsStateWithLifecycle(initialValue=false)
     var dbOk by remember(uid){mutableStateOf(false)}
     var calendarOpen by remember(uid){mutableStateOf(false)}
     var logout by remember(uid){mutableStateOf(false)}
-    var testBusy by remember(uid){mutableStateOf(false)}
+    var geminiOpen by remember(uid){mutableStateOf(false)}
+    var keyConfigured by remember(uid){mutableStateOf(AiConfig.configured(ctx,uid))}
     var detail by remember(uid){mutableStateOf("")}
     var syncOpen by remember(uid){mutableStateOf(false)}
-    val auto by model.autoSyncEnabled.collectAsStateWithLifecycle()
+    val health by remember(uid){ServiceHealth.observe(ctx,uid,"firestore")}.collectAsStateWithLifecycle(initialValue=false)
     val sync by model.syncState.collectAsStateWithLifecycle()
+    val pending by model.pendingCount.collectAsStateWithLifecycle()
     LaunchedEffect(uid,approval){
         dbOk=false
         if(approval==true)try{Cloud.verifyDatabase(ctx,uid);dbOk=true}catch(e:CancellationException){throw e}catch(_:Exception){}
@@ -48,7 +50,7 @@ import kotlinx.coroutines.CancellationException
     LaunchedEffect(uid){if(uid!="local")CalendarSync.verifyConnection(ctx,uid)}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
         GlassCard{
-            Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Sin verificar"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
+            Row(verticalAlignment=Alignment.CenterVertically){ProfileAvatar(uid,onClick={});Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(if(uid=="local")"Sin cuenta" else model.email(),style=MaterialTheme.typography.titleMedium);if(uid!="local")Text(when(approval){true->"Autorizado";false->"No autorizado";null->"Autorizado · sin conexión"},color=if(approval==true)Color(0xFF26834A)else MaterialTheme.colorScheme.error)}}
             if(uid=="local")Button(enabled=!busy,onClick={online("conectar tu cuenta")}){Text("Iniciar sesión con Google")}
             else TextButton(onClick={logout=true}){Text("Cerrar sesión")}
         }
@@ -56,18 +58,15 @@ import kotlinx.coroutines.CancellationException
             Text("Servicios",style=MaterialTheme.typography.titleLarge)
             ServiceRow("Google",uid!="local")
             HorizontalDivider()
-            ServiceRow("Sincronización",uid!="local"&&approval==true&&dbOk,if(uid!="local")"Pulsa para sincronizar" else ""){if(uid=="local")online("sincronizar")else syncOpen=true}
+            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(pending>0)"$pending cambios pendientes" else if(approval==null)"Sin conexión / sin verificar" else "Pulsa para sincronizar"){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
             ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()
-            ServiceRow("Gemini",uid!="local"&&approval==true&&AiConfig.configured()&&gemini,if(testBusy)"Comprobando…" else if(!AiConfig.configured())"Pendiente de configuración" else if(gemini)"Última prueba correcta · pulsa para verificar" else "Pulsa para comprobar"){
-                if(uid=="local")online("usar Gemini")
-                else if(!testBusy){testBusy=true;detail="";coroutine.launch{try{AiConfig.provider(ctx,uid).answerWithUserContext("Responde únicamente OK.",emptyList());detail="Gemini ha respondido correctamente."}catch(e:CancellationException){throw e}catch(e:Exception){detail=e.localizedMessage?:"No se pudo conectar"}finally{testBusy=false}}}
-            }
-            if(detail.isNotBlank())Text(detail,style=MaterialTheme.typography.bodySmall)
+            ServiceRow("Gemini",uid!="local"&&keyConfigured&&gemini,if(keyConfigured)"Clave personal · pulsa para gestionar" else "Opcional · conectar clave personal"){geminiOpen=true}
         }
     }
+    if(geminiOpen)PersonalGeminiDialog(uid,{geminiOpen=false;keyConfigured=AiConfig.configured(ctx,uid)})
     if(calendarOpen)AlertDialog(onDismissRequest={calendarOpen=false},title={Text("Google Calendar")},text={Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())){CalendarSettings(model,uid)}},confirmButton={TextButton(onClick={calendarOpen=false}){Text("Cerrar")}})
-    if(syncOpen)AlertDialog(onDismissRequest={syncOpen=false},title={Text("Sincronización")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(sync);Button(enabled=!busy,onClick={model.sync()}){Text("Sincronizar ahora")};Row(verticalAlignment=Alignment.CenterVertically){Text("Automática cada 6 horas",Modifier.weight(1f));Switch(auto,{model.setAutomaticSync(it)})}}},confirmButton={TextButton(onClick={syncOpen=false}){Text("Cerrar")}})
-    if(logout)Confirm("Cerrar sesión","Tus datos locales se conservan.",{logout=false},{model.logout()})
+    if(syncOpen)AlertDialog(onDismissRequest={syncOpen=false},title={Text("Sincronización")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(sync);Button(enabled=!busy,onClick={model.sync()}){Text("Sincronizar ahora")};Row(verticalAlignment=Alignment.CenterVertically){Text("Sincronización automática · cambios pendientes al recuperar conexión",Modifier.weight(1f))}}},confirmButton={TextButton(onClick={syncOpen=false}){Text("Cerrar")}})
+    if(logout)Confirm("Cerrar sesión","Tus datos locales se conservan. La clave personal de Gemini se elimina de este dispositivo.",{logout=false},{model.logout()})
 }

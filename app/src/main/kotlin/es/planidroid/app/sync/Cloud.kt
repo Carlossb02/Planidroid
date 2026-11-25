@@ -41,7 +41,26 @@ object Cloud {
     }
     class ApprovalRequired : IllegalStateException("Tu cuenta está pendiente de autorización. Solicita al administrador que habilite tu UID.")
     private fun prefs(context:Context,uid:String)=context.getSharedPreferences("cloud-sync-$uid",Context.MODE_PRIVATE)
-    fun automatic(context:Context,uid:String)=prefs(context,uid).getBoolean("automatic",false)
+    fun networkAvailable(context:Context):Boolean {val cm=context.getSystemService(android.net.ConnectivityManager::class.java);val network=cm.activeNetwork?:return false;return cm.getNetworkCapabilities(network)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)==true}
+    fun previouslyApproved(context:Context,uid:String)=uid!="local"&&prefs(context,uid).getBoolean("verifiedAccess",false)
+    fun recordApproval(context:Context,uid:String,enabled:Boolean){
+        if(uid=="local")return
+        prefs(context,uid).edit().putBoolean("verifiedAccess",enabled).commit()
+        if(!enabled)stop(context,uid)
+    }
+    fun automatic(context:Context,uid:String)=previouslyApproved(context,uid)
+    fun dirtyChanged(context:Context,uid:String){
+        if(!previouslyApproved(context,uid)||auth(context)?.currentUser?.uid!=uid)return
+        val request=OneTimeWorkRequestBuilder<SyncWorker>()
+            .setInitialDelay(60,TimeUnit.SECONDS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,15,TimeUnit.MINUTES)
+            .setInputData(workDataOf("uid" to uid)).build()
+        WorkManager.getInstance(context).enqueueUniqueWork("pending-sync-$uid",ExistingWorkPolicy.KEEP,request)
+    }
+    fun refreshOnOpen(context:Context,uid:String){
+        if(System.currentTimeMillis()-prefs(context,uid).getLong("lastSuccess",0)>15*60_000L)dirtyChanged(context,uid)
+    }
     /** Explicit sign-in or access check: create a pending request once, without overwriting admin decisions. */
     suspend fun registerApproval(context:Context,uid:String):Boolean {
         val user=auth(context)?.currentUser?:error("Inicia sesión")
@@ -58,18 +77,23 @@ object Cloud {
             }
         }.await()
         check(auth(context)?.currentUser?.uid==uid){"La cuenta ha cambiado"}
+        recordApproval(context,uid,enabled)
         return enabled
     }
     suspend fun requireApproval(context:Context,uid:String) {
         check(auth(context)?.currentUser?.uid==uid){"Sesión no disponible"}
         val snapshot=FirebaseFirestore.getInstance().collection("approvedUsers").document(uid).get(Source.SERVER).await()
-        if(snapshot.get("enabled")!=true)throw ApprovalRequired()
+        if(snapshot.get("enabled")!=true){recordApproval(context,uid,false);throw ApprovalRequired()}
+        if(auth(context)?.currentUser?.uid==uid)recordApproval(context,uid,true)
     }
     fun observeApproval(context:Context,uid:String)=callbackFlow<Boolean?>{
         if(uid=="local"||auth(context)?.currentUser?.uid!=uid){trySend(null);close();return@callbackFlow}
         val listener=FirebaseFirestore.getInstance().collection("approvedUsers").document(uid)
             .addSnapshotListener(MetadataChanges.INCLUDE){snapshot,error->
-                trySend(if(error!=null||snapshot==null||snapshot.metadata.isFromCache)null else snapshot.get("enabled")==true)
+                if(auth(context)?.currentUser?.uid!=uid){trySend(false);return@addSnapshotListener}
+                val verified=if(error?.code==FirebaseFirestoreException.Code.PERMISSION_DENIED)false else if(error!=null||snapshot==null||snapshot.metadata.isFromCache)null else snapshot.get("enabled")==true
+                if(verified!=null)recordApproval(context,uid,verified)
+                trySend(verified)
             }
         awaitClose{listener.remove()}
     }
@@ -78,7 +102,7 @@ object Cloud {
         FirebaseFirestore.getInstance().collection("users").document(uid).collection("records").limit(1).get(Source.SERVER).await()
     }
     fun stop(context:Context,uid:String) {
-        if(uid!="local")WorkManager.getInstance(context).cancelUniqueWork("sync-$uid")
+        if(uid!="local"){val wm=WorkManager.getInstance(context);wm.cancelUniqueWork("sync-$uid");wm.cancelUniqueWork("pending-sync-$uid")}
     }
     fun setAutomatic(context:Context,uid:String,enabled:Boolean){
         prefs(context,uid).edit().putBoolean("automatic",enabled).apply()
@@ -97,7 +121,7 @@ object Cloud {
             val version = db.runTransaction { tx ->
                 val ref = coll.document(row.id); val snap = tx.get(ref)
                 val current = snap.getLong("version") ?: 0L
-                if (current != row.baseVersion) -1L else {
+                if(current>row.baseVersion&&snap.getString("payload")==payload&&snap.getBoolean("deleted")==row.deleted&&snap.getString("kind")==row.kind)current else if (current != row.baseVersion) -1L else {
                     tx.set(ref, mapOf("kind" to row.kind,"payload" to payload,"deleted" to row.deleted,"version" to current+1,"updatedAt" to FieldValue.serverTimestamp()))
                     current+1
                 }
@@ -131,7 +155,12 @@ object Cloud {
         }
         newest?.let{p.edit().putLong("cursorSeconds",it.seconds).putInt("cursorNanos",it.nanoseconds).commit()}
         SessionReminders.refresh(context,uid)
-        check(conflicts == 0) { "$conflicts conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
+        prefs(context,uid).edit().putLong("lastSuccess",System.currentTimeMillis()).apply()
+        val shared=SharedCloud(context)
+        val sharedConflicts=shared.flushPending()
+        if(shared.hasCache()&&shared.needsRefresh())shared.list()
+        ServiceHealth.mark(context,uid,"firestore",true)
+        check(conflicts == 0 && sharedConflicts==0) { "${conflicts+sharedConflicts} conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
     }
     fun schedule(context: Context, uid: String) {
         if(!automatic(context,uid)){stop(context,uid);return}
@@ -143,6 +172,6 @@ class SyncWorker(context: Context, params: WorkerParameters): CoroutineWorker(co
     override suspend fun doWork(): Result {
         val uid=inputData.getString("uid") ?: return Result.failure()
         if(Cloud.auth(applicationContext)?.currentUser?.uid != uid || !Cloud.automatic(applicationContext,uid)) return Result.success()
-        return try { Cloud.sync(applicationContext,uid); Result.success() } catch(e: kotlinx.coroutines.CancellationException) { throw e } catch(e: Cloud.ApprovalRequired) { Cloud.setAutomatic(applicationContext,uid,false); Result.success() } catch(e: FirebaseFirestoreException) { if(e.code==FirebaseFirestoreException.Code.PERMISSION_DENIED){Cloud.setAutomatic(applicationContext,uid,false);Result.success()}else Result.success() } catch(e: Exception) { Result.success() }
+        return try { Cloud.sync(applicationContext,uid); Result.success() } catch(e: kotlinx.coroutines.CancellationException) { throw e } catch(e: Cloud.ApprovalRequired) { ServiceHealth.mark(applicationContext,uid,"firestore",false);Result.success() } catch(e: FirebaseFirestoreException) { ServiceHealth.mark(applicationContext,uid,"firestore",false);if(e.code in listOf(FirebaseFirestoreException.Code.UNAVAILABLE,FirebaseFirestoreException.Code.DEADLINE_EXCEEDED,FirebaseFirestoreException.Code.ABORTED,FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED)&&runAttemptCount<4)Result.retry()else Result.success() } catch(e: Exception) { Result.success() }
     }
 }

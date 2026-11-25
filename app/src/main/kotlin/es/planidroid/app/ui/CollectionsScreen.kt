@@ -17,34 +17,37 @@ import es.planidroid.app.sync.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineScope){
-    var spaces by mutableStateOf(emptyList<SharedSpace>())
+    var spaces by mutableStateOf(api?.cached()?.first.orEmpty())
         private set
-    var invites by mutableStateOf(emptyList<Membership>())
+    var invites by mutableStateOf(api?.cached()?.second.orEmpty())
         private set
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf("")
         private set
-    fun work(action:suspend (SharedCloud)->Unit={}){
+    fun work(refresh:Boolean=true,action:suspend (SharedCloud)->Unit={}){
         val cloud=api?:return
         if(busy)return
         busy=true;error=""
         scope.launch{
-            try{action(cloud);val r=cloud.list();spaces=r.first;invites=r.second}
+            try{action(cloud);val r=if(refresh)cloud.list()else cloud.cached();spaces=r.first;invites=r.second}
             catch(e:CancellationException){throw e}
             catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
             finally{busy=false}
         }
     }
+    suspend fun observe(){api?.observeCached()?.collect{r->spaces=r.first;invites=r.second}}
     suspend fun refreshNow(){val r=api!!.list();spaces=r.first;invites=r.second}
 }
 @Composable private fun collectionAccess(uid:String):CollectionAccess{
     val ctx=LocalContext.current;val scope=rememberCoroutineScope()
     val state=remember(uid){CollectionAccess(if(uid=="local")null else runCatching{SharedCloud(ctx)}.getOrNull(),scope)}
-    // Load cloud collections only when the user explicitly requests them.
+    LaunchedEffect(state){state.observe()}
+    LaunchedEffect(state){if(state.api?.needsRefresh()==true&&Cloud.networkAvailable(ctx))state.work()}
     return state
 }
 @Composable private fun OnlineCollections(state:CollectionAccess,uid:String){
@@ -56,7 +59,9 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
             Text("Compartido",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
             IconButton(onClick={state.work()},enabled=!state.busy){Icon(Icons.Outlined.Refresh,"Actualizar")}
         }
-        Text("Pulsa actualizar para consultar tus listas, hogares e invitaciones online.",style=MaterialTheme.typography.bodySmall)
+        val pending=state.api?.pendingEdits()?.size?:0
+        if(pending>0)Text("$pending cambios compartidos pendientes",style=MaterialTheme.typography.bodySmall)
+        if(!Cloud.networkAvailable(LocalContext.current))Text("Sin conexión · copia local",style=MaterialTheme.typography.bodySmall)
         if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(state.error.isNotBlank())Text(state.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
         state.invites.forEach{m->GlassCard(tint=Lilac){
@@ -131,7 +136,8 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     var scan by remember(s.id){mutableStateOf(false)}
     var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
     var historyOpen by remember{mutableStateOf(false)}
-    fun update(next:SharedShopping){access.work{it.update(s,s.title,encode(next))}}
+    var recipes by remember{mutableStateOf(false)}
+    fun update(next:SharedShopping){access.work(refresh=false){it.update(s,s.title,encode(next))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
         TextButton(onClick=back){Text("‹ Listas")}
         Row(verticalAlignment=Alignment.CenterVertically){Text(s.title,Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir")}}
@@ -153,12 +159,14 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
                 }
             }
         }
+        if(write)OutlinedButton(onClick={recipes=true}){Icon(Icons.Outlined.AutoAwesome,null);Text(" Recetas con Gemini")}
         if(data.items.none{it.pending})Text("Todo al día",style=MaterialTheme.typography.titleMedium)
         TextButton(onClick={historyOpen=!historyOpen}){Text(if(historyOpen)"Ocultar historial" else "Historial de compras")}
         if(historyOpen)data.history.asReversed().forEach{p->
             Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(p.name);Text(sessionDate(p.boughtAt).toString(),style=MaterialTheme.typography.bodySmall)};if(write&&!p.undone)TextButton(enabled=!access.busy,onClick={val old=data.items.find{it.id==p.shoppingId};val next=if(old!=null)data.items.map{if(it.id==old.id)it.copy(pending=true)else it}else data.items+Shopping(name=p.name,quantity=p.quantity,unit=p.unit,quantitySpecified=p.quantitySpecified,icon=p.icon);update(data.copy(items=next,history=data.history.map{if(it.id==p.id)it.copy(undone=true)else it}))}){Text("Deshacer")}}
         }
     }
+    if(recipes)RecipeSuggestions(Cloud.auth(LocalContext.current)?.currentUser?.uid?:"local",data.items.filter{it.pending}.map{it.name},"",{recipes=false},{update(data.copy(items=data.items+it))})
     if(scan)ShoppingScan("",{scan=false},{update(data.copy(items=data.items+it));scan=false})
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=data.items.map{if(it.id==p.id)next.copy(itemId="")else it}));editing=null})}
 }
@@ -226,7 +234,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     var layout by remember(s.id){mutableStateOf(false)}
     var edit by remember(s.id){mutableStateOf<Item?>(null)}
     var selected by remember(s.id){mutableStateOf<String?>(null)}
-    fun update(next:SharedFurniture){access.work{it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
+    fun update(next:SharedFurniture){access.work(refresh=false){it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         TextButton(onClick=back){Text("‹ Muebles")}
         Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir mueble")}}

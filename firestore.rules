@@ -59,7 +59,7 @@ service cloud.firestore {
           (d.kind=='furniture' ? (d.parentId.size()>0 && space(d.parentId).data.kind=='house' && space(d.parentId).data.ownerUid==d.ownerUid) : d.parentId=='')));
     }
     match /sharedSpaces/{id} {
-      allow get: if signed() && (resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']) || inherited(resource.data,['reader','editor','admin']));
+      allow get: if signed() && (resource == null || resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']) || inherited(resource.data,['reader','editor','admin']));
       allow list: if signed() && (resource.data.ownerUid==request.auth.uid || inherited(resource.data,['reader','editor','admin']));
       allow create: if signed() && validSpace() && request.resource.data.ownerUid==request.auth.uid && request.resource.data.version==1;
       allow update: if writer(id) && validSpace() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body','version','updatedAt']) && request.resource.data.version==resource.data.version+1;
