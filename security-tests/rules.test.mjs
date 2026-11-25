@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
 let env;
-before(async()=>{env=await initializeTestEnvironment({projectId:'demo-planidroid',firestore:{rules:readFileSync(new URL('../firestore.rules',import.meta.url),'utf8')}});await env.withSecurityRulesDisabled(async c=>{for(const uid of ['A','B','C','D'])await setDoc(doc(c.firestore(),'approvedUsers',uid),{enabled:true})})});
+before(async()=>{env=await initializeTestEnvironment({projectId:'demo-planidroid',firestore:{rules:readFileSync(new URL('../firestore.rules',import.meta.url),'utf8')}});await env.withSecurityRulesDisabled(async c=>{const db=c.firestore();for(const uid of ['A','B','C','D'])await setDoc(doc(db,'approvedUsers',uid),{enabled:true})})});
 after(async()=>{await env?.cleanup()});
 const user=(uid)=>env.authenticatedContext(uid,{email:`${uid.toLowerCase()}@example.com`,email_verified:true}).firestore();
 test('private: owner only, monotonic version',async()=>{
