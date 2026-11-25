@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
         val n=if(h.minutesPerTopic>0&&count!=null)runCatching{StudyIntent.studyMinutes(h,count)}.getOrDefault(0)
             else if(h.minutesPerTopic>0)0
             else estimates[t.id]?.toIntOrNull()?.takeIf{it in 1..100000}?:if(t.id in estimates)0 else effort(t).takeIf{it>0}?:h.suggestedMinutes
-        return t.copy(minutes=n,planHints=h.copy(topicCount=count?:0),overlapWith=permissions[t.id]?:t.overlapWith)
+        return t.copy(minutes=n,planHints=h.copy(topicCount=count?:0,sessionLimit=if(h.sessionLimit==60&&h.compact)120 else h.sessionLimit),overlapWith=permissions[t.id]?:t.overlapWith)
     }
     val replacements=if(replan)sessions.filter{it.taskId in picked&&!it.done&&it.start>now&&it.calendarTitle.isBlank()}else emptyList()
     val kept=sessions.filterNot{it in replacements}

@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
     var deadline by remember(task.id){mutableStateOf(task.due.ifBlank{today.plusDays(7).toString()})}
     var from by remember(task.id){mutableStateOf(hints.windowStart.ifBlank{"09:00"})}
     var until by remember(task.id){mutableStateOf(hints.windowEnd.ifBlank{"19:00"})}
-    var max by remember(task.id){mutableStateOf(hints.sessionLimit.coerceIn(1,1440).toString())}
+    var max by remember(task.id){mutableStateOf((if(hints.sessionLimit==60&&hints.compact)120 else hints.sessionLimit).coerceIn(1,1440).toString())}
     var pause by remember(task.id){mutableStateOf(hints.breakMinutes.toString())}
     var compact by remember(task.id){mutableStateOf(hints.compact)}
     var daily by remember(task.id){mutableStateOf(hints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}

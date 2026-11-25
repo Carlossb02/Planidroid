@@ -29,14 +29,14 @@ fun productType(name:String):ProductType {
     val n=java.text.Normalizer.normalize(name.lowercase(),java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"),"")
     fun has(vararg words:String)=words.any{Regex("\\b"+Regex.escape(it)+"(?:s|es)?\\b").containsMatchIn(n)}
     return when {
-        has("detergente","lejia","limpiador","estropajo","lavavajillas","suavizante","fregona","desinfectante","quitamanchas","bolsa basura","jabon platos","jabon ropa","lavadora")->ProductType.CLEANING
+        has("detergente","lejia","limpiador","estropajo","lavavajillas","suavizante","fregona","desinfectante","quitamanchas","bolsa basura","jabon platos","jabon de platos","jabon ropa","jabon de ropa","lavadora")->ProductType.CLEANING
         has("champu","jabon","gel","pasta dientes","pasta de dientes","cepillo dientes","cepillo de dientes","desodorante","higiene","dentifrico","crema facial","crema corporal","compresa","tampon","afeitado","protector solar")->ProductType.HYGIENE
         has("papel","servilleta","panuelo")->ProductType.PAPER
-        has("yogur","yogurt","yoghurt","kefir","cuajada")->ProductType.YOGURT
+        has("yogur","yogurt","yoghurt","yogures","kefir","cuajada")->ProductType.YOGURT
         has("queso","mozzarella","parmesano","cheddar","gouda","ricotta","feta","requeson","brie","mascarpone")->ProductType.CHEESE
         has("leche","nata","mantequilla","lacteo","batido","bebida avena","bebida de soja")->ProductType.DAIRY
         has("huevo")->ProductType.EGGS
-        has("manzana","platano","banana","pera","naranja","mandarina","fresa","uva","kiwi","melon","sandia","fruta","limon","aguacate","mango","pina","arandano","frambuesa","melocoton","nectarina","ciruela","cereza","granada","papaya","pomelo","higo","albaricoque")->ProductType.FRUIT
+        has("manzana","platano","banana","pera","naranja","mandarina","fresa","uva","kiwi","melon","sandia","fruta","limon","limones","aguacate","mango","pina","arandano","frambuesa","melocoton","nectarina","ciruela","cereza","granada","papaya","pomelo","higo","albaricoque")->ProductType.FRUIT
         has("verdura","tomate","patata","cebolla","zanahoria","lechuga","brocoli","pimiento","calabacin","ajo","espinaca","pepino","champinon","champinones","coliflor","berenjena","puerro","apio","acelga","repollo","col","calabaza","esparrago","alcachofa","guisante","judia","habichuela","lenteja","garbanzo","alubia","legumbre","soja","habas","seta","boniato","rabano","remolacha")->ProductType.VEGETABLES
         has("pollo","carne","cerdo","ternera","jamon","pavo","salchicha","chorizo","bacon","cordero","conejo","filete","solomillo","pechuga","hamburguesa","lomo","mortadela","salami","fuet","panceta")->ProductType.MEAT
         has("pescado","salmon","atun","merluza","bacalao","gamba","sardina","marisco","dorada","lubina","calamar","pulpo","mejillon","langostino","anchoa","bonito","trucha","rape","caballa","sepia","almeja")->ProductType.FISH

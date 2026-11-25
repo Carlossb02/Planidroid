@@ -10,7 +10,7 @@ object PlanningPreferences {
         if(match!=null){
             fun value(i:Int):String?=runCatching{LocalTime.of(match.groupValues[i].toInt(),match.groupValues[i+1].ifBlank{"0"}.toInt()).toString()}.getOrNull()
             val from=value(1);val until=value(3)
-            if(from!=null&&until!=null&&from!=until)return from to until
+            if(from!=null&&until!=null&&from!=until&&(match.value.contains(":")||Regex("""\b(?:h|horas?)\b""").containsMatchIn(match.value)||Regex("""\b(?:horario|noche|madrugada|estudiar|estudio|disponible)\b""").containsMatchIn(s)))return from to until
         }
         // Do not interpret negative availability as a preferred window.
         if(Regex("""\b(?:no puedo|no quiero|excepto|sin)\b[^.;]{0,45}\b(?:noche|madrugada|manana|tarde)\b""").containsMatchIn(s))return null

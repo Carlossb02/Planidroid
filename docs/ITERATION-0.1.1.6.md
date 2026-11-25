@@ -1,0 +1,8 @@
+# Planidroid 0.1.1.6
+- Gemini devuelve preferencias estructuradas. Los horarios explícitos del usuario tienen prioridad; noche y madrugada sin horas se interpretan como 21:00–06:00, revisable.
+- Se permiten ventanas que cruzan medianoche, con días referidos a la noche de inicio. Los vencimientos cortan la ventana a medianoche. Bloques largos, fases y pausas adaptativas propuestas, sin contar pausas como trabajo. Las pausas se dejan como intervalos libres, no se guardan como eventos independientes.
+- Gemini puede analizar títulos, prioridades y disponibilidad del calendario bajo confirmación. Solo propone tareas movibles; eventos manuales con calendarTitle, externos y completados se conservan. El usuario selecciona las tareas y revisa el plan calculado localmente. No se aplica automáticamente un horario generado por Gemini.
+- Calendario cronológico con tarjetas y colores estables por proyecto o tarea, indicadores de color en semana/mes. Colores automáticos, no seleccionables aún.
+- Campos de petición vacíos; recetas estructuradas con raciones, cantidades, unidades, preparación y selección individual marcada por defecto. Los ingredientes ya presentes se señalan para evitar duplicados.
+- Eliminación múltiple en listas propias y compartidas, sin generar compras en historial ni cambiar existencias. Clasificación ampliada e iconos monocromos diferenciados.
+- Nuevos tests NightPlanningTest y ProductTypeTest; ejecutar testDebugUnitTest, lintDebug, assembleDebug y pruebas en dispositivo. Actualizar todos los dispositivos antes de sincronizar datos con nuevos campos de planificación.
