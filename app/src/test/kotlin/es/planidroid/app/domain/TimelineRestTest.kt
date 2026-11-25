@@ -23,7 +23,7 @@ class TimelineRestTest{
         assertTrue(sessions.filter{it.isBreak}.all{it.taskId==task.id})
         assertEquals(240L,sessions.filterNot{it.isBreak}.sumOf{(it.end-it.start)/60000})
         assertEquals(240,TaskConstraints.remaining(task,sessions.filter{it.isBreak}))
-        assertEquals(0,TaskConstraints.remaining(task,sessions))
+        assertEquals(0,TaskConstraints.remaining(task,sessions,at(date,20)))
         assertFalse(proposal.sessions(false).any{it.isBreak})
         assertTrue(decode<Session>(encode(sessions.first{it.isBreak})).isBreak)
     }

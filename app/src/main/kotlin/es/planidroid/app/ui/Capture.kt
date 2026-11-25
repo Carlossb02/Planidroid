@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
         busy=true; error=""
         coroutine.launch {
             try {
-                val clarification=if(followUp)questions.mapIndexed{i,q->q.question+"\nRespuesta: "+answers[i].orEmpty()}.joinToString("\n").take(3000)else ""
+                val clarification=if(followUp)questions.mapIndexed{i,q->"Tarea "+(q.taskIndex+1)+": "+q.question+"\nRespuesta: "+answers[i].orEmpty()}.joinToString("\n").take(3000)else ""
                 val proposal=AiConfig.provider(context,uid).parseNaturalLanguage(request.take(6000)+(if(followUp)"\nACLARACIONES DEL USUARIO (prioritarias): "+clarification+"\nDevuelve propuesta final, no hagas más preguntas." else "")+"\nAgenda ocupada: "+availability.take(2500))
                 val tasks=proposal.tasks
                 check(tasks.isNotEmpty()){"Gemini no devolvió tareas. Añade más información."}

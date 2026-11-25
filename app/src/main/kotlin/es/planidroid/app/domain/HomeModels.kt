@@ -64,6 +64,6 @@ object ShoppingText {
         val a=quantity.matchEntire(line);val b=if(a==null)trailing.matchEntire(line)else null
         val name=when{a!=null->a.groupValues[3];b!=null->b.groupValues[1];else->line}.trim().take(180)
         val n=(a?.groupValues?.get(1)?:b?.groupValues?.get(2))?.replace(',','.')?.toDoubleOrNull()?.takeIf{it.isFinite()&&it>0}
-        Shopping(name=name,quantity=n?:1.0,unit=if(n==null)"" else a?.groupValues?.get(2)?:b?.groupValues?.get(3).orEmpty(),quantitySpecified=n!=null,icon=guessIcon(name),listId=listId)
+        Shopping(name=name,quantity=n?:1.0,unit=if(n==null)"" else SpanishUnits.canonical(a?.groupValues?.get(2)?:b?.groupValues?.get(3).orEmpty()).orEmpty(),quantitySpecified=n!=null,icon=guessIcon(name),listId=listId)
     }.filter{it.name.isNotBlank()}
 }

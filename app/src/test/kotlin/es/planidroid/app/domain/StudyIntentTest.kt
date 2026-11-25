@@ -49,6 +49,6 @@ class StudyIntentTest {
         val old=Session(taskId=t.id,start=today.atTime(10,0).toInstant(zone).toEpochMilli(),end=today.atTime(11,0).toInstant(zone).toEpochMilli())
         val done=old.copy(id=newId(),done=true)
         assertEquals(1680,TaskConstraints.remaining(t,listOf(done)))
-        assertEquals(1620,TaskConstraints.remaining(t,listOf(done,old)))
+        assertEquals(1620,TaskConstraints.remaining(t,listOf(done,old),old.start-1))
     }
 }

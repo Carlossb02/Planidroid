@@ -88,7 +88,7 @@ private data class WebSource(val title:String,val url:String)
                     }
                     if(sources.isNotEmpty()){
                         Text("Fuentes de Google",style=MaterialTheme.typography.titleMedium)
-                        sources.forEachIndexed{i,s->Row(verticalAlignment=Alignment.CenterVertically){RadioButton(selected=sourceIndex==i,onClick={sourceIndex=i;if(productName.isBlank())productName=s.title.take(180)});Text(s.title,Modifier.weight(1f),maxLines=2);IconButton(onClick={openShoppingReference(ctx,s.url)}){Icon(Icons.Default.OpenInNew,"Abrir fuente")}}}
+                        sources.forEachIndexed{i,s->Row(verticalAlignment=Alignment.CenterVertically){RadioButton(selected=sourceIndex==i,onClick={sourceIndex=i});Text(s.title,Modifier.weight(1f),maxLines=2);IconButton(onClick={openShoppingReference(ctx,s.url)}){Icon(Icons.Default.OpenInNew,"Abrir fuente")}}}
                         if(suggestions.isNotBlank())SearchSuggestions(suggestions)
                         if(sourceIndex!=null){Field(productName,{productName=it.take(180)},"Nombre exacto del producto");Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(quantity,{quantity=it.take(12)},"Cantidad")};Column(Modifier.weight(1f)){UnitSelector(unit,{unit=it},allowEmpty=false)}};Text(if(shared)"El nombre y el enlace se compartirán con esta lista."else "Comprueba la ficha antes de añadir.",style=MaterialTheme.typography.bodySmall)}
                     }
@@ -109,7 +109,7 @@ private data class WebSource(val title:String,val url:String)
 @Composable private fun SearchSuggestions(html:String){
     val ctx=LocalContext.current
     AndroidView(factory={context->WebView(context).apply{
-        settings.javaScriptEnabled=false;settings.allowFileAccess=false;settings.allowContentAccess=false;settings.blockNetworkLoads=true
+        settings.javaScriptEnabled=false;settings.allowFileAccess=false;settings.allowContentAccess=false;settings.blockNetworkLoads=true;settings.allowFileAccessFromFileURLs=false;settings.allowUniversalAccessFromFileURLs=false
         webViewClient=object:WebViewClient(){override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{request?.url?.toString()?.let{openShoppingReference(ctx,it)};return true}}
-    }},update={it.loadDataWithBaseURL(null,html,"text/html","UTF-8",null)},modifier=Modifier.fillMaxWidth().height(104.dp))
+    }},onRelease={it.stopLoading();it.destroy()},update={it.loadDataWithBaseURL(null,html,"text/html","UTF-8",null)},modifier=Modifier.fillMaxWidth().height(104.dp))
 }

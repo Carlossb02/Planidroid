@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
     val now=remember{System.currentTimeMillis()}
     val eligible=tasks.filter{it.status !in listOf(Status.DONE,Status.ARCHIVED,Status.BLOCKED)&&TaskConstraints.unmet(it,tasks).isEmpty()}
     fun effort(t:Task)=t.minutes.takeIf{it>0}?:t.phases.sumOf{it.minutes}
-    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else TaskConstraints.remaining(it,sessions)>0}.map{it.id}.toSet())}
+    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else TaskConstraints.remaining(it,sessions)>0||effort(it)==0}.map{it.id}.toSet())}
     var estimates by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var topics by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var expanded by remember{mutableStateOf<String?>(null)}
@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
     }
     val replacements=if(replan)sessions.filter{it.taskId in picked&&!it.done&&it.start>now&&it.calendarTitle.isBlank()}else emptyList()
     val kept=sessions.filterNot{it in replacements}
-    LaunchedEffect(tasks,sessions,external){reset()}
+    LaunchedEffect(tasks,sessions,external){if(!submitted)reset()}
     Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
         Surface(Modifier.fillMaxSize()){
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){

@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
     }}}
     if(aiConnect)PersonalGeminiDialog(uid){aiConnect=false}
     if(aiConfirm)Confirm("Completar con Gemini","Se enviará la tarea sin contactos ni adjuntos y los intervalos ocupados.",{aiConfirm=false},{prefill()})
-    aiDraft?.let{p->AlertDialog(onDismissRequest={aiDraft=null},title={Text("Campos propuestos")},text={Column(Modifier.heightIn(max=400.dp).verticalScroll(rememberScrollState())){Text(p.title);Text(p.due.ifBlank{"Sin fecha"}+" · "+p.minutes+" min");if(p.description.isNotBlank())Text(p.description);if(p.goal.isNotBlank())Text(p.goal);p.phases.forEach{Text(it.title+" · "+it.minutes+" min")};if(p.planHints.breakMinutes>0)Text("Pausas de "+p.planHints.breakMinutes+" min")}},confirmButton={TextButton(onClick={t=t.copy(description=t.description.ifBlank{p.description},due=t.due.ifBlank{p.due},category=if(t.due.isBlank()&&p.due.isNotBlank())Category.DEADLINE else t.category,checks=t.checks.ifEmpty{p.checks},phases=t.phases.ifEmpty{p.phases},goal=t.goal.ifBlank{p.goal},planHints=PlanningPreferences.merge(p.planHints,t.planHints,t.description));if((minutes.toIntOrNull()?:0)==0)minutes=p.minutes.toString();phasesOpen=t.phases.isNotEmpty();objectives=t.checks.isNotEmpty();aiDraft=null}){Text("Rellenar formulario")}},dismissButton={TextButton(onClick={aiDraft=null}){Text("Descartar")}})}
+    aiDraft?.let{p->AlertDialog(onDismissRequest={aiDraft=null},title={Text("Campos propuestos")},text={Column(Modifier.heightIn(max=400.dp).verticalScroll(rememberScrollState())){Text(p.title);Text(p.due.ifBlank{"Sin fecha"}+" · "+p.minutes+" min");if(p.description.isNotBlank())Text(p.description);if(p.goal.isNotBlank())Text(p.goal);p.phases.forEach{Text(it.title+" · "+it.minutes+" min")};if(p.planHints.breakMinutes>0)Text("Pausas de "+p.planHints.breakMinutes+" min")}},confirmButton={TextButton(onClick={t=t.copy(description=t.description.ifBlank{p.description},due=t.due.ifBlank{p.due},category=if(t.due.isBlank()&&p.due.isNotBlank())Category.DEADLINE else t.category,checks=t.checks.ifEmpty{p.checks},phases=t.phases.ifEmpty{p.phases},goal=t.goal.ifBlank{p.goal},planHints=PlanningPreferences.merge(p.planHints,t.planHints,t.description));if((minutes.toIntOrNull()?:0)==0)minutes=p.minutes.toString();phasesOpen=false;objectives=false;aiDraft=null}){Text("Rellenar formulario")}},dismissButton={TextButton(onClick={aiDraft=null}){Text("Descartar")}})}
     phaseEdit?.let{p->PhaseDetail(p,{phaseEdit=null},{v->t=t.copy(phases=t.phases.map{if(it.id==v.id)v else it});phaseEdit=null})}
     if(remove)Confirm("Eliminar tarea","Se eliminarán también sus sesiones.",{remove=false},delete)
 }
@@ -53,10 +53,10 @@ import kotlinx.coroutines.launch
     val capturedNow=remember(task.id){System.currentTimeMillis()}
     var planningNow by remember(task.id){mutableLongStateOf(capturedNow+30_000L)}
     var startToday by remember(task.id){mutableStateOf<Boolean?>(null)}
-    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>capturedNow&&it.calendarTitle.isBlank()}
+    val previous=existing.filter{it.taskId==task.id&&!it.done&&it.start>planningNow&&it.calendarTitle.isBlank()}
     val kept=existing.filterNot{it in previous}
     val doneMinutes=maxOf(task.actualMinutes,kept.filter{it.taskId==task.id&&!it.isBreak&&it.done}.sumOf{((it.end-it.start)/60000).toInt()})
-    val otherReserved=kept.filter{it.taskId==task.id&&!it.isBreak&&!it.done&&it.end>capturedNow}.sumOf{((it.end-it.start)/60000).toInt()}
+    val otherReserved=kept.filter{it.taskId==task.id&&!it.isBreak&&!it.done&&it.end>planningNow}.sumOf{((it.end-it.start)/60000).toInt()}
     var hints by remember(task.id){mutableStateOf(task.planHints)}
     var plannedPhases by remember(task.id){mutableStateOf(task.phases)}
     var start by remember(task.id){mutableStateOf(task.startDate.ifBlank{today.toString()})}
