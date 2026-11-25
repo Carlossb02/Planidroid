@@ -6,3 +6,5 @@
 - Campos de petición vacíos; recetas estructuradas con raciones, cantidades, unidades, preparación y selección individual marcada por defecto. Los ingredientes ya presentes se señalan para evitar duplicados.
 - Eliminación múltiple en listas propias y compartidas, sin generar compras en historial ni cambiar existencias. Clasificación ampliada e iconos monocromos diferenciados.
 - Nuevos tests NightPlanningTest y ProductTypeTest; ejecutar testDebugUnitTest, lintDebug, assembleDebug y pruebas en dispositivo. Actualizar todos los dispositivos antes de sincronizar datos con nuevos campos de planificación.
+
+- Editor de interior: nombre por tipo, sufijos numéricos únicos para compartimentos repetidos; nombres existentes conservados. Movimiento por pulsación larga y arrastre, con cálculo de celdas exacto; ancho y alto en filas separadas con controles de incremento y límites/colisiones. Interior/puerta sigue siendo una ubicación seleccionable.

@@ -8,6 +8,11 @@ import kotlin.math.abs
 object LayoutGrid {
     const val WIDTH=4
     const val HEIGHT=8
+    fun defaultName(type:ZoneType,others:List<Zone>):String {
+        val base=type.label
+        var index=1
+        while(true){val candidate=if(index==1)base else "$base $index";if(others.none{it.name.equals(candidate,true)})return candidate;index++}
+    }
     fun fits(z:Zone, others:List<Zone>):Boolean = z.w in 1..WIDTH && z.h in 1..HEIGHT && z.x>=0 && z.y>=0 && z.x+z.w<=WIDTH && z.y+z.h<=HEIGHT && others.none { it.name!=z.name && it.door==z.door && z.x<it.x+it.w && z.x+z.w>it.x && z.y<it.y+it.h && z.y+z.h>it.y }
     fun place(name:String,type:ZoneType,door:Boolean,others:List<Zone>,w:Int=4,h:Int=1):Zone? { for(y in 0..HEIGHT-h) for(x in 0..WIDTH-w) { val z=Zone(name,type,door,x,y,w,h);if(fits(z,others))return z };return null }
     fun zones(f:Furniture):List<Zone> = f.zones.ifEmpty { f.compartments.take(8).mapIndexed { i,n->Zone(n,y=i) } }
