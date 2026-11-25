@@ -1,7 +1,8 @@
 package es.planidroid.app.domain
 
 import kotlinx.serialization.Serializable
-@Serializable data class AiProposal(val tasks: List<Task>, val uncertainties: List<String> = emptyList(), val assumptions: List<String> = emptyList(), val suggestedQuestions: List<String> = emptyList(), val confidence: Double = 0.0)
+@Serializable data class Clarification(val taskIndex:Int=0,val field:String,val question:String)
+@Serializable data class AiProposal(val tasks: List<Task>, val uncertainties: List<String> = emptyList(), val assumptions: List<String> = emptyList(), val suggestedQuestions: List<String> = emptyList(), val confidence: Double = 0.0,val clarifications:List<Clarification> = emptyList())
 interface AiProvider {
     suspend fun parseNaturalLanguage(text: String): AiProposal
     suspend fun suggestTaskBreakdown(task: Task): AiProposal

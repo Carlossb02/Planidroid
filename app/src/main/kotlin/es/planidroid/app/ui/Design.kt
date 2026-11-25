@@ -4,6 +4,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +33,6 @@ val LocalGlass=compositionLocalOf { false }
 @Composable fun DateField(value:String,change:(String)->Unit,label:String,optional:Boolean=true){
     var open by remember{mutableStateOf(false)}
     val initial=remember(value){runCatching{java.time.LocalDate.parse(value).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()}.getOrNull()}
-    OutlinedTextField(value,change,Modifier.fillMaxWidth(),label={Text(label)},singleLine=true,shape=RoundedCornerShape(16.dp),trailingIcon={TextButton(onClick={open=true}){Text("Elegir")}})
+    OutlinedTextField(value,change,Modifier.fillMaxWidth(),label={Text(label)},singleLine=true,shape=RoundedCornerShape(16.dp),trailingIcon={IconButton(onClick={open=true}){Icon(Icons.Default.CalendarToday,"Elegir fecha")}})
     if(open){val state=rememberDatePickerState(initialSelectedDateMillis=initial);DatePickerDialog(onDismissRequest={open=false},confirmButton={TextButton(enabled=state.selectedDateMillis!=null,onClick={state.selectedDateMillis?.let{change(java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())};open=false}){Text("Aceptar")}},dismissButton={Row{if(optional)TextButton(onClick={change("");open=false}){Text("Quitar")};TextButton(onClick={open=false}){Text("Cancelar")}}}){DatePicker(state)}}
 }
