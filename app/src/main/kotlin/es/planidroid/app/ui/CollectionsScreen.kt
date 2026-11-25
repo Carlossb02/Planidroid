@@ -28,12 +28,12 @@ private class CollectionAccess(val api:SharedCloud?,private val scope:CoroutineS
         private set
     var error by mutableStateOf("")
         private set
-    fun work(action:suspend (SharedCloud)->Unit={}){
+    fun work(refresh:Boolean=true,action:suspend (SharedCloud)->Unit={}){
         val cloud=api?:return
         if(busy)return
         busy=true;error=""
         scope.launch{
-            try{action(cloud);val r=cloud.list();spaces=r.first;invites=r.second}
+            try{action(cloud);val r=if(refresh)cloud.list()else cloud.cached();spaces=r.first;invites=r.second}
             catch(e:CancellationException){throw e}
             catch(e:com.google.firebase.firestore.FirebaseFirestoreException){error=if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)"Acceso denegado. Comprueba en Ajustes si tu cuenta está autorizada." else e.localizedMessage?:"No se pudo conectar"}
             catch(e:Exception){error=e.localizedMessage?:"No se pudo conectar"}
@@ -137,7 +137,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
     var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
     var historyOpen by remember{mutableStateOf(false)}
     var recipes by remember{mutableStateOf(false)}
-    fun update(next:SharedShopping){access.work{it.update(s,s.title,encode(next))}}
+    fun update(next:SharedShopping){access.work(refresh=false){it.update(s,s.title,encode(next))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
         TextButton(onClick=back){Text("‹ Listas")}
         Row(verticalAlignment=Alignment.CenterVertically){Text(s.title,Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir")}}
@@ -234,7 +234,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     var layout by remember(s.id){mutableStateOf(false)}
     var edit by remember(s.id){mutableStateOf<Item?>(null)}
     var selected by remember(s.id){mutableStateOf<String?>(null)}
-    fun update(next:SharedFurniture){access.work{it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
+    fun update(next:SharedFurniture){access.work(refresh=false){it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         TextButton(onClick=back){Text("‹ Muebles")}
         Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir mueble")}}

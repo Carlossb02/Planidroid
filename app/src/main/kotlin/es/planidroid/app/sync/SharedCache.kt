@@ -28,7 +28,7 @@ internal class SharedCache(ctx:Context,private val uid:String){
     fun invalidate()=synchronized(lock){prefs.edit().remove("snapshot").commit()}
     fun enqueue(s:SharedSpace,title:String,body:String)=synchronized(lock){
         val current=pending();val old=current.find{it.id==s.id}
-        val next=PendingSharedEdit(s.id,old?.base?:s.version,title,body,(old?.revision?:0)+1)
+        val next=PendingSharedEdit(s.id,old?.base?:s.version,title,body,System.nanoTime())
         check(prefs.edit().putString("pending",encode(current.filterNot{it.id==s.id}+next)).commit()){"No se pudo guardar el cambio"}
     }
     fun ack(edit:PendingSharedEdit,version:Long)=synchronized(lock){

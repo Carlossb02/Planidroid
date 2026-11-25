@@ -30,13 +30,14 @@ class SharedCloud(private val context:Context){
     private fun space(d:com.google.firebase.firestore.DocumentSnapshot,role:String)=SharedSpace(d.id,d.getString("ownerUid").orEmpty(),d.getString("kind").orEmpty(),d.getString("title").orEmpty(),d.getString("body").orEmpty(),d.getLong("version")?:0,role,d.getString("parentId").orEmpty(),d.getString("homeName").orEmpty(),d.getString("sourceId").orEmpty())
     fun cached()=cache.visible()
     fun observeCached()=cache.observe()
+    fun hasCache()=cache.snapshot().refreshed>0
     fun needsRefresh()=System.currentTimeMillis()-cache.snapshot().refreshed>15*60_000L
     fun pendingEdits()=cache.pending()
     fun discardPending(id:String){checkUser();cache.discard(id)}
     suspend fun list():Pair<List<SharedSpace>,List<Membership>>{
         checkUser()
         if(!Cloud.networkAvailable(context))return cache.visible()
-        return try{withTimeoutOrNull(12000){remoteList()}?:cache.visible()}
+        return try{withTimeoutOrNull(12000){flushMutex.withLock{remoteList()}}?:cache.visible()}
         catch(e:FirebaseFirestoreException){
             if(e.code==FirebaseFirestoreException.Code.PERMISSION_DENIED){cache.invalidate();throw e}
             if(e.code in listOf(FirebaseFirestoreException.Code.UNAVAILABLE,FirebaseFirestoreException.Code.DEADLINE_EXCEEDED))cache.visible()else throw e
@@ -64,8 +65,9 @@ class SharedCloud(private val context:Context){
         return mapOf("ownerUid" to uid,"kind" to kind,"title" to title.trim(),"body" to body,"version" to 1L,"updatedAt" to FieldValue.serverTimestamp(),"sourceId" to sourceId,"parentId" to parentId,"homeName" to homeName.take(180))
     }
     /** Explicit publication: private images and inventory links are excluded. Never overwrite an existing shared resource. */
+    private fun requireOnline(){check(Cloud.networkAvailable(context)){"Necesitas conexión para compartir o gestionar permisos"}}
     suspend fun publishShopping(list:es.planidroid.app.domain.ShoppingList,items:List<es.planidroid.app.domain.Shopping>):SharedSpace {
-        checkUser()
+        checkUser();requireOnline()
         val id=stable("shopping_list",list.id);val ref=spaces.document(id)
         val payload=es.planidroid.app.domain.encode(es.planidroid.app.domain.SharedShopping(items=items.map{it.copy(itemId="",minimum=0.0,target=1.0)}))
         val value=data("shopping_list",list.name,payload,list.id)
@@ -73,7 +75,7 @@ class SharedCloud(private val context:Context){
         return space(ref.get(Source.SERVER).await(),"owner")
     }
     suspend fun publishHome(home:es.planidroid.app.domain.Home,furniture:List<es.planidroid.app.domain.Furniture>,items:List<es.planidroid.app.domain.Item>):SharedSpace {
-        checkUser()
+        checkUser();requireOnline()
         require(furniture.size<=150)
         val id=stable("house",home.id);val parent=spaces.document(id)
         val homeData=data("house",home.name,"{}",home.id)
@@ -95,13 +97,13 @@ class SharedCloud(private val context:Context){
         return space(spaces.document(stable("furniture",f.id)).get(Source.SERVER).await(),"owner")
     }
     suspend fun addFurniture(home:SharedSpace,f:es.planidroid.app.domain.Furniture):SharedSpace {
-        checkUser();require(home.kind=="house"&&home.role=="owner"&&home.owner==uid)
+        checkUser();requireOnline();require(home.kind=="house"&&home.role=="owner"&&home.owner==uid)
         val ref=spaces.document(stable("furniture",f.id))
         val payload=es.planidroid.app.domain.encode(es.planidroid.app.domain.SharedFurniture(f.copy(photo=""),emptyList()))
         db.runTransaction{tx->check(!tx.get(ref).exists());tx.set(ref,data("furniture",f.name,payload,f.id,home.id,home.title));Unit}.await()
         return space(ref.get(Source.SERVER).await(),"owner")
     }
-    suspend fun create(kind:String,title:String,body:String){checkUser();require(title.isNotBlank());spaces.document(UUID.randomUUID().toString()).set(mapOf("ownerUid" to uid,"kind" to kind,"title" to title.trim(),"body" to body,"version" to 1L,"updatedAt" to FieldValue.serverTimestamp())).await()}
+    suspend fun create(kind:String,title:String,body:String){checkUser();requireOnline();require(title.isNotBlank());spaces.document(UUID.randomUUID().toString()).set(mapOf("ownerUid" to uid,"kind" to kind,"title" to title.trim(),"body" to body,"version" to 1L,"updatedAt" to FieldValue.serverTimestamp())).await()}
     suspend fun update(s:SharedSpace,title:String,body:String){
         checkUser();require(Cloud.previouslyApproved(context,uid)&&s.role in listOf("owner","editor","admin"))
         require(title.isNotBlank()&&title.length<=180&&body.length<=50000)
@@ -126,11 +128,11 @@ class SharedCloud(private val context:Context){
         }
         conflicts
     }
-    suspend fun invite(s:SharedSpace,target:String,role:String){checkUser();val e=target.trim();require(e.matches(Regex("[^/~\\s@]+@[^/~\\s@]+\\.[^/~\\s@]+"))&&e!=email);members.document(memberId(s.id,e)).set(mapOf("spaceId" to s.id,"email" to e,"role" to role,"status" to "pending","invitedBy" to uid,"acceptedUid" to "","expiresAt" to com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis()+7L*24*60*60*1000)),"updatedAt" to FieldValue.serverTimestamp())).await()}
-    suspend fun respond(m:Membership,accept:Boolean){checkUser();members.document(m.id).update(mapOf("status" to if(accept)"accepted" else "declined","acceptedUid" to if(accept)uid else "","updatedAt" to FieldValue.serverTimestamp())).await()}
-    suspend fun participants(s:SharedSpace):List<Membership>{checkUser();return members.whereEqualTo("spaceId",s.id).get(Source.SERVER).await().documents.map(::membership)}
+    suspend fun invite(s:SharedSpace,target:String,role:String){checkUser();requireOnline();val e=target.trim();require(e.matches(Regex("[^/~\\s@]+@[^/~\\s@]+\\.[^/~\\s@]+"))&&e!=email);members.document(memberId(s.id,e)).set(mapOf("spaceId" to s.id,"email" to e,"role" to role,"status" to "pending","invitedBy" to uid,"acceptedUid" to "","expiresAt" to com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis()+7L*24*60*60*1000)),"updatedAt" to FieldValue.serverTimestamp())).await()}
+    suspend fun respond(m:Membership,accept:Boolean){checkUser();requireOnline();members.document(m.id).update(mapOf("status" to if(accept)"accepted" else "declined","acceptedUid" to if(accept)uid else "","updatedAt" to FieldValue.serverTimestamp())).await()}
+    suspend fun participants(s:SharedSpace):List<Membership>{checkUser();requireOnline();return members.whereEqualTo("spaceId",s.id).get(Source.SERVER).await().documents.map(::membership)}
     suspend fun revoke(m:Membership){checkUser();members.document(m.id).delete().await()}
     suspend fun leave(s:SharedSpace){checkUser();members.document(memberId(s.id,email)).delete().await()}
-    suspend fun comments(s:SharedSpace):List<SharedComment>{checkUser();return spaces.document(s.id).collection("comments").orderBy("createdAt").limitToLast(100).get(Source.SERVER).await().documents.map{SharedComment(it.id,it.getString("authorUid").orEmpty(),it.getString("body").orEmpty())}}
-    suspend fun comment(s:SharedSpace,body:String){checkUser();require(body.isNotBlank());spaces.document(s.id).collection("comments").add(mapOf("authorUid" to uid,"body" to body.trim(),"createdAt" to FieldValue.serverTimestamp())).await()}
+    suspend fun comments(s:SharedSpace):List<SharedComment>{checkUser();requireOnline();return spaces.document(s.id).collection("comments").orderBy("createdAt").limitToLast(100).get(Source.SERVER).await().documents.map{SharedComment(it.id,it.getString("authorUid").orEmpty(),it.getString("body").orEmpty())}}
+    suspend fun comment(s:SharedSpace,body:String){checkUser();requireOnline();require(body.isNotBlank());spaces.document(s.id).collection("comments").add(mapOf("authorUid" to uid,"body" to body.trim(),"createdAt" to FieldValue.serverTimestamp())).await()}
 }

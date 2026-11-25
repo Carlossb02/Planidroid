@@ -27,7 +27,9 @@ import kotlinx.coroutines.withContext
     val restore=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)model.run{val text=withContext(Dispatchers.IO){val stream=ctx.contentResolver.openInputStream(uri) ?: error("Archivo no disponible");stream.bufferedReader().use{reader->val out=StringBuilder();val buf=CharArray(8192);while(true){val n=reader.read(buf);if(n<0)break;out.append(buf,0,n);require(out.length<=8_000_000){"Copia demasiado grande"}};out.toString()}};imported=null;backup=PortableBackup.stripReferences(BackupIO.validate(text))}}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
         Section("Herramientas","Apariencia, copias y notificaciones.")
-        GlassCard{Text("Datos de versiones anteriores");TextButton(onClick={model.importGuestData()}){Text("Importar antiguos datos de invitado a mi cuenta")}}
+        var migrate by remember{mutableStateOf(false)}
+        GlassCard{Text("Datos de versiones anteriores");TextButton(onClick={migrate=true}){Text("Importar antiguos datos de invitado a mi cuenta")}}
+        if(migrate)Confirm("Importar datos anteriores","Se copiarán los datos del modo invitado a esta cuenta y podrán sincronizarse con Firebase.",{migrate=false},{model.importGuestData()})
         ConflictSettings(model,scope)
         SharedPendingSettings(scope)
         GlassCard{Text("Apariencia",style=MaterialTheme.typography.titleLarge);Choice("Tema",listOf("Sistema","Claro","Oscuro"),theme,{it}){model.setting(it,glass)};Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Tarjetas con más color");Text("Material 3 con un tinte más intenso. Sin desenfoque dinámico.",style=MaterialTheme.typography.bodySmall)};Switch(glass,{model.setting(theme,it)})}}

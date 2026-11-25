@@ -121,7 +121,7 @@ object Cloud {
             val version = db.runTransaction { tx ->
                 val ref = coll.document(row.id); val snap = tx.get(ref)
                 val current = snap.getLong("version") ?: 0L
-                if (current != row.baseVersion) -1L else {
+                if(current>row.baseVersion&&snap.getString("payload")==payload&&snap.getBoolean("deleted")==row.deleted&&snap.getString("kind")==row.kind)current else if (current != row.baseVersion) -1L else {
                     tx.set(ref, mapOf("kind" to row.kind,"payload" to payload,"deleted" to row.deleted,"version" to current+1,"updatedAt" to FieldValue.serverTimestamp()))
                     current+1
                 }
@@ -158,6 +158,7 @@ object Cloud {
         prefs(context,uid).edit().putLong("lastSuccess",System.currentTimeMillis()).apply()
         val shared=SharedCloud(context)
         val sharedConflicts=shared.flushPending()
+        if(shared.hasCache()&&shared.needsRefresh())shared.list()
         ServiceHealth.mark(context,uid,"firestore",true)
         check(conflicts == 0 && sharedConflicts==0) { "${conflicts+sharedConflicts} conflictos: se conservan los cambios locales. Exporta una copia antes de resolverlos." }
     }

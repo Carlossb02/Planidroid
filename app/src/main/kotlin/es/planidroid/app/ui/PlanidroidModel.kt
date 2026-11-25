@@ -23,7 +23,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val access=scope.flatMapLatest{uid->
         if(uid=="local")flowOf(Access())else Cloud.observeApproval(app,uid).onStart{emit(null)}.map{server->
-            Access(uid,server,server==true||(server==null&&Cloud.previouslyApproved(app,uid)))
+            Access(uid,server,AccessPolicy.allowed(uid,Cloud.previouslyApproved(app,uid),server))
         }
     }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(0),Access())
     val approval=access.map{it.verified}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(0),null)
@@ -129,6 +129,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         require(Cloud.previouslyApproved(getApplication(),uid))
         val entries=dao.all("local").filterNot{it.deleted}
         db.withTransaction{for(row in entries)if(dao.get(uid,row.id)==null)dao.save(uid,row.id,row.kind,row.payload)}
+        entries.filter{it.kind==Kind.TASK.name}.forEach{row->dao.get(uid,row.id)?.takeUnless{it.deleted}?.let{Reminders.update(getApplication(),uid,decode<Task>(it.payload))}};SessionReminders.refresh(getApplication(),uid)
         message.value="Datos del modo invitado copiados a esta cuenta; los originales se conservan."
     }}
     fun logout() { val uid=scope.value;Cloud.recordApproval(getApplication(),uid,false);runCatching{es.planidroid.app.sync.PersonalGeminiKey.remove(getApplication(),uid)};auth?.signOut();_scope.value="local";syncState.value="Sin sincronizar" }

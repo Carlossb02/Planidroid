@@ -58,7 +58,7 @@ import kotlinx.coroutines.CancellationException
             Text("Servicios",style=MaterialTheme.typography.titleLarge)
             ServiceRow("Google",uid!="local")
             HorizontalDivider()
-            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(pending>0)"$pending cambios pendientes" else "Pulsa para sincronizar"){if(uid=="local")online("sincronizar")else syncOpen=true}
+            ServiceRow("Sincronización",uid!="local"&&approval==true&&(dbOk||health),if(pending>0)"$pending cambios pendientes" else if(approval==null)"Sin conexión / sin verificar" else "Pulsa para sincronizar"){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
             ServiceRow("Google Calendar",uid!="local"&&calendar,if(uid!="local")"Pulsa para conectar o comprobar" else ""){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
             HorizontalDivider()

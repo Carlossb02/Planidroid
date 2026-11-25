@@ -12,7 +12,7 @@ import java.time.LocalDate
 
 /** BYOK: send key only in HTTPS header to the fixed official Google endpoint. Never log provider bodies. */
 class GeminiGateway(private val apiKey:suspend ()->String,private val status:(Boolean)->Unit={}):AiProvider {
-    companion object {const val MODEL="gemini-3.1-flash-lite"}
+    companion object {const val MODEL="gemini-3.5-flash-lite"}
     private suspend fun call(instruction:String,text:String,image:ByteArray?=null):JSONObject=try{
         require(text.length<=16000);require(image==null||image.size<=2_000_000)
         val key=apiKey()
