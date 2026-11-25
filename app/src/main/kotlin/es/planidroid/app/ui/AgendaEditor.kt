@@ -120,6 +120,7 @@ import java.time.*
                                 AgendaInput(t.id,t.title,TaskConstraints.remaining(t,kept),t.due.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it).minusDays(buffer)}?:last,t.priority.ordinal,phaseBudgets,t.startDate.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it)})
                             }
                             val p=AgendaPlanner.plan(inputs,today,last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),external+excluded,zone,existing=kept,tasks=updates)
+                            require(replacements.none{old->p.deficits.any{it.taskId==old.taskId}&&p.blocks.none{it.taskId==old.taskId}}){"Una tarea ya planificada se quedaría sin sesiones. Amplía el horario o desmarca esa tarea."}
                             Triple(p,replacements,updates.filter{u->tasks.find{it.id==u.id}!=u})
                         }.onSuccess{(p,old,updates)->proposal=p;replacing=old;approvedUpdates=updates;error=if(p.blocks.isEmpty())"No hay sesiones nuevas que reservar. Revisa el tiempo y los días disponibles." else ""}
                             .onFailure{error=it.message?:"Revisa la duración, fechas y disponibilidad.";proposal=null}

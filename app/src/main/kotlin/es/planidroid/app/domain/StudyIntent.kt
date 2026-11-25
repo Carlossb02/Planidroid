@@ -25,7 +25,7 @@ object StudyIntent {
     }
     fun weeklyCount(text:String):Int?=Regex("\\b"+number+"\\s+dias?\\s*(?:a la|por|cada|en la)\\s+semana\\b").find(normalize(text))?.groupValues?.get(1)?.let(::integer)?.takeIf{it in 1..7}
     fun namedDays(text:String):Set<DayOfWeek> {
-        val s=normalize(text)
+        val s=normalize(text).replace(Regex("\\b(?:no puedo|excepto|descansar|sin)\\s+(?:estudiar\\s+)?(?:los\\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?(?:\\s*(?:,|y|e)\\s*(?:los\\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?)*"),"")
         // Only treat weekday names as positive availability after an affirmative cue.
         val clause=Regex("(?:solo\\s+(?:puedo|tengo|estudio)|puedo(?:\\s+estudiar)?|disponib(?:le|ilidad)|estudiar(?:\\s+los)?|estudio(?:\\s+los)?|los)\\s+([^.;\\n]+)").findAll(s).map{it.groupValues[1]}.firstOrNull{part->weekdays.any{Regex("\\b"+it+"s?\\b").containsMatchIn(part)}&&!Regex("\\b(?:excepto|descansar|no puedo|sin)\\b").containsMatchIn(part)} ?: s.takeIf{Regex("^(?:los\\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?(?:\\s*(?:,|y|e)\\s*(?:los\\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?)*[.!]?$").matches(it.trim())}?:return emptySet()
         return weekdays.mapIndexedNotNull{i,w->if(Regex("\\b"+w+"s?\\b").containsMatchIn(clause))DayOfWeek.of(i+1)else null}.toSet()

@@ -10,6 +10,15 @@ object OverlapPolicy {
     }
     fun conflict(candidate:Session,other:Session,tasks:Collection<Task>):Boolean =
         candidate.id!=other.id && candidate.start<other.end && other.start<candidate.end && !allowed(candidate.taskId,other.taskId,tasks)
+    fun revokedConflict(sessions:List<Session>,before:Collection<Task>,after:Collection<Task>,now:Long):Boolean {
+        val future=sessions.filter{!it.done&&it.end>now}.sortedBy{it.start}
+        for(i in future.indices)for(j in i+1 until future.size){
+            val a=future[i];val b=future[j]
+            if(b.start>=a.end)break
+            if(allowed(a.taskId,b.taskId,before)&&conflict(a,b,after))return true
+        }
+        return false
+    }
     fun blocking(taskId:String,sessions:List<Session>,tasks:Collection<Task>):List<Interval> =
         sessions.filterNot{allowed(taskId,it.taskId,tasks)}.map{Interval(it.start,it.end)}
 }

@@ -34,8 +34,10 @@ import kotlinx.coroutines.launch
         busy=true; error=""
         coroutine.launch {
             try {
-                val tasks=if(remote) AiConfig.provider(context,uid,true).parseNaturalLanguage(request).tasks else CaptureParser.parse(request)
-                draft=tasks.ifEmpty { CaptureParser.parse(request) }.map { t -> t.copy(id=newId(),planHints=if(remote)SmartCapture.hints(t.description.ifBlank{request},t.due,java.time.LocalDate.now())else t.planHints) }
+                val local=CaptureParser.parse(request)
+                val structuredStudy=local.size==1&&local.first().planHints.finishBeforeDeadline
+                val tasks=if(remote&&!structuredStudy) AiConfig.provider(context,uid,true).parseNaturalLanguage(request).tasks else local
+                draft=tasks.ifEmpty { local }.map { t -> t.copy(id=newId(),planHints=if(remote&&!structuredStudy)SmartCapture.hints(t.description.ifBlank{request},t.due,java.time.LocalDate.now())else t.planHints) }
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { error="No se pudo usar Gemini. Puedes continuar sin conexión." }
             finally { busy=false }
