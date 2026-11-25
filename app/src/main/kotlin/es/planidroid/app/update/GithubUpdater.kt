@@ -81,9 +81,9 @@ class GithubUpdater(private val context: Context) {
             require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == release.digest) { "Checksum incorrecto" }
             @Suppress("DEPRECATION") val apk = pm.getPackageArchiveInfo(tmp.absolutePath, flags) ?: error("APK inválido")
             val current = installed()
-            require(apk.packageName == context.packageName && code(apk) > code(current) && apk.versionName == release.tag.removePrefix("v")) { "Identidad o versión incorrecta" }
+            ReleaseVersion.validationError(release.tag, apk.packageName, context.packageName, apk.versionName, code(apk), current.versionName, code(current))?.let { error(it) }
             val expected = signers(current)
-            require(expected.isNotEmpty() && signers(apk) == expected) { "La firma del APK no coincide" }
+            require(expected.isNotEmpty() && signers(apk) == expected) { "La firma del APK no coincide con la instalada. Genera el APK con la misma clave; no desinstales sin hacer copia." }
             success = true; tmp
         } finally { if (!success) tmp.delete() }
     }

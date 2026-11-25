@@ -11,3 +11,14 @@ El APK se verifica por tamaño, digest, applicationId, versionCode, versionName 
 
 ## Primera publicación y transición desde compilaciones de desarrollo
 La primera versión oficial es 0.1.0.0 (versionCode 9). Las compilaciones de desarrollo 0.5.x tienen un versionName numéricamente superior; su actualizador no detectará este cambio de numeración. Si ya instalaste una, instala manualmente 0.1.0.0 con la misma firma y conserva tus datos. Android permite la actualización porque el versionCode aumenta. A partir de 0.1.0.0, incrementar ambas versiones en cada publicación; ejemplos: 0.1.0.1, 0.1.1.0, 0.2.0.0. No publicar las compilaciones antiguas como releases estables.
+
+## Validar una actualización antes de publicarla (Windows)
+Desde PowerShell en la raíz del proyecto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/verify-release.ps1 -Apk "app/build/outputs/apk/release/Planidroid_v0.1.1.1.apk" -Tag "0.1.1.1" -PreviousApk "C:/ruta/Planidroid-anterior.apk"
+```
+
+El script comprueba el paquete, la versión interna, el versionCode de Gradle y que aumente respecto al APK anterior, el nombre del archivo y la igualdad de los certificados de firma. Usa el APK de la versión anterior realmente instalada, no uno reconstruido con otra clave. Si no conservas ese APK, puedes extraerlo desde tu dispositivo con adb (adb shell pm path es.planidroid.app y adb pull de la ruta devuelta). Las rutas y certificados se verifican localmente; no se necesitan claves privadas en el repositorio.
+
+La actualización 0.1.1.1 tiene versionCode 11. Publica el APK recién generado bajo un tag nuevo 0.1.1.1, no renombres uno antiguo. No cambies el tag de una release publicada para ocultar diferencias de versión.
