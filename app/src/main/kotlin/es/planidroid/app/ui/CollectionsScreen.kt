@@ -99,25 +99,28 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
 @Composable fun ShoppingListsScreen(uid:String,lists:List<ShoppingList>,shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel){
     val access=collectionAccess(uid);val online=LocalOnlineAccess.current
     val legacy=ShoppingList(id="legacy-shopping",name="Mi compra")
-    val local=lists+if(lists.isEmpty()||shopping.any{it.listId.isBlank()}||history.any{it.listId.isBlank()})listOf(legacy)else emptyList()
+    val local=lists+if(shopping.any{it.listId.isBlank()}||history.any{it.listId.isBlank()})listOf(legacy)else emptyList()
     val shared=access.spaces.filter{it.kind=="shopping_list"}
     var selectedId by rememberSaveable(uid){mutableStateOf<String?>(null)}
     val selected=local.find{it.id==selectedId}
     var remote by rememberSaveable(uid){mutableStateOf<String?>(null)}
     var create by remember{mutableStateOf(false)}
     var publish by remember{mutableStateOf<ShoppingList?>(null)}
+    var removeList by remember(uid){mutableStateOf<ShoppingList?>(null)}
+    var removeSharedList by remember(uid){mutableStateOf<SharedSpace?>(null)}
     var invite by remember{mutableStateOf<String?>(null)}
     val currentRemote=shared.find{it.id==remote}
     fun key(l:ShoppingList)=if(l.id==legacy.id)"" else l.id
     SectionBack(selectedId!=null||remote!=null){selectedId=null;remote=null}
     if(currentRemote!=null){
-        SharedShoppingDetail(currentRemote,access,{remote=null},{invite=currentRemote.id})
+        SharedShoppingDetail(currentRemote,access,{remote=null},{invite=currentRemote.id},{removeSharedList=currentRemote})
     }else if(selected!=null){
         val l=selected!!
-        ShoppingScreen(shopping.filter{it.listId==key(l)},history.filter{it.listId==key(l)},inventory,model,key(l),l.name,{selectedId=null},{if(uid=="local")online("compartir esta lista")else publish=l})
+        ShoppingScreen(shopping.filter{it.listId==key(l)},history.filter{it.listId==key(l)},inventory,model,key(l),l.name,{selectedId=null},{if(uid=="local")online("compartir esta lista")else publish=l},removeList={removeList=l})
     }else{
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
             Row(verticalAlignment=Alignment.CenterVertically){Text("Tus listas",Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);FilledIconButton(onClick={create=true}){Icon(Icons.Outlined.Add,"Crear lista")}}
+            if(local.isEmpty()&&shared.isEmpty())Text("Crea una lista para empezar.",color=MaterialTheme.colorScheme.onSurfaceVariant)
             local.filter{l->shared.none{it.role=="owner"&&it.sourceId==l.id}}.forEach{l->
                 val count=shopping.count{it.listId==key(l)&&ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0}
                 CollectionTile(l.name,count.toString()+" pendientes",false,{selectedId=l.id}){Icon(Icons.Outlined.ShoppingBasket,null)}
@@ -127,12 +130,29 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
             shared.filter{it.role!="owner"}.forEach{s->CollectionTile(s.title,roleLabel(s.role),true,{remote=s.id}){Icon(Icons.Outlined.ShoppingBasket,null)}}
         }
     }
+    removeList?.let { list ->
+        Confirm("¿Eliminar ${list.name}?", "Se eliminarán los productos y el historial de esta lista. El inventario y las recetas se conservan.", { removeList=null }) {
+            model.delete(key(list), Kind.SHOPPING_LIST) { selectedId=null }
+        }
+    }
+    removeSharedList?.let { list ->
+        val privateCopy=local.find{it.id==list.sourceId}
+        Confirm("¿Eliminar ${list.title}?", "Se eliminarán los productos y el historial compartidos para todos los participantes."+
+            if(privateCopy!=null)" También se eliminará tu copia privada." else "", { removeSharedList=null }) {
+            access.work(refresh=false,finished={failure->
+                if(failure==null){
+                    remote=null
+                    if(privateCopy!=null&&model.scope.value==uid)model.delete(key(privateCopy),Kind.SHOPPING_LIST)
+                }
+            }) { it.archive(list) }
+        }
+    }
     if(create)CollectionNameDialog("Nueva lista",{create=false},{model.save(ShoppingList(name=it))})
     publish?.let{l->Confirm("Compartir esta lista","Se creará una lista colaborativa con los productos actuales, sin enlaces a tu inventario privado. La copia local se conserva como recuperación; en adelante edita la versión compartida. El historial previo permanece privado.",{publish=null},{access.work{api->val s=api.publishShopping(l,shopping.filter{it.listId==key(l)});selectedId=null;remote=s.id;invite=s.id}})}
     invite?.let{id->shared.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
 
-@Composable private fun SharedShoppingDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit){
+@Composable private fun SharedShoppingDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit,removeList:()->Unit){
     val data=remember(s.id,s.version,s.body){decode<SharedShopping>(s.body)}
     val write=s.role in listOf("owner","editor","admin");val ctx=LocalContext.current
     var quick by remember(s.id){mutableStateOf("")};var scan by remember(s.id){mutableStateOf(false)};var editing by remember(s.id){mutableStateOf<Shopping?>(null)}
@@ -147,9 +167,9 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         Row(verticalAlignment=Alignment.CenterVertically){IconButton(onClick=back){Icon(Icons.Outlined.ArrowBack,"Volver")}
             Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.titleLarge);Text(roleLabel(s.role)+" · "+pending.size+" pendientes",style=MaterialTheme.typography.labelMedium)}
             if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir")}
-            if(write)Box{IconButton(onClick={menu=true}){Icon(Icons.Outlined.MoreVert,"Acciones")};DropdownMenu(menu,{menu=false}){DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;historyOpen=false;selecting=true});DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;editing=Shopping(name="",unit="",quantitySpecified=false)})}}
+            if(write)Box{IconButton(onClick={menu=true}){Icon(Icons.Outlined.MoreVert,"Acciones")};DropdownMenu(menu,{menu=false}){DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;historyOpen=false;selecting=true});DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;editing=Shopping(name="",unit="",quantitySpecified=false)});if(s.role=="owner")DropdownMenuItem(text={Text("Eliminar lista",color=MaterialTheme.colorScheme.error)},enabled=!access.busy,onClick={menu=false;removeList()})}}
         }
-        if(write&&!selecting)ShoppingInput(quick,{quick=it.take(500)},{update(data.copy(items=data.items+ShoppingText.parse(quick)));quick=""},{scan=true},!access.busy)
+        if(write&&!selecting&&!historyOpen)ShoppingInput(quick,{quick=it.take(500)},{update(data.copy(items=data.items+ShoppingText.parse(quick)));quick=""},{scan=true},!access.busy)
         if(write&&!selecting&&!historyOpen)ShoppingAiActions({recipes=true},{shoppingAi=true},!access.busy)
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){FilterChip(!historyOpen,{historyOpen=false;clear()},label={Text("Lista")});FilterChip(historyOpen,{historyOpen=true;clear()},label={Text("Historial")})}
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -171,7 +191,7 @@ private fun roleLabel(role:String)=when(role){"owner"->"Propio";"reader"->"Solo 
         }
     }
     if(confirmDelete)Confirm("Eliminar "+selected.size+" productos","No se registrarán como compras.",{confirmDelete=false},{update(data.copy(items=data.items.filterNot{it.id in selected}));clear()})
-    if(shoppingAi)ShoppingAssistant(Cloud.auth(ctx)?.currentUser?.uid?:"local",pending,"",{shoppingAi=false},{update(data.copy(items=data.items+it))},shared=true)
+    if(shoppingAi)ShoppingAssistant(Cloud.auth(ctx)?.currentUser?.uid?:"local",pending,"",{shoppingAi=false},{update(data.copy(items=data.items+it))})
     if(recipes)RecipeSuggestions(Cloud.auth(ctx)?.currentUser?.uid?:"local",pending,"",{recipes=false},{update(data.copy(items=data.items+it))})
     if(scan)ShoppingScan("",{scan=false},{update(data.copy(items=data.items+it));scan=false})
     editing?.let{p->ShoppingEditor(p,emptyList(),{editing=null},{next->update(data.copy(items=if(data.items.any{it.id==p.id})data.items.map{if(it.id==p.id)next.copy(itemId="")else it}else data.items+next.copy(itemId="")));editing=null})}
@@ -198,6 +218,8 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     var createLocalFurniture by remember{mutableStateOf(false)}
     var query by rememberSaveable(uid,selected){mutableStateOf("")}
     var publishHome by remember{mutableStateOf(false)}
+    var removeHome by remember(uid){mutableStateOf<Home?>(null)}
+    var removeShared by remember(uid){mutableStateOf<SharedSpace?>(null)}
     var publishFurniture by remember{mutableStateOf<Furniture?>(null)}
     var invite by remember{mutableStateOf<String?>(null)}
     val current=groups.find{it.key==selected}
@@ -208,7 +230,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     val privateLists=lists.filter{l->access.spaces.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==l.id}}.let{available->
         if(access.spaces.any{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId=="legacy-shopping"})available.ifEmpty{listOf(ShoppingList(id="inventory-restock-list",name="Reposición"))}else available+ShoppingList(id="",name="Mi compra")
     }
-    if(currentFurniture!=null)SharedFurnitureDetail(currentFurniture,access,{remote=null},{invite=currentFurniture.id},uid,model,privateLists)
+    if(currentFurniture!=null)SharedFurnitureDetail(currentFurniture,access,{remote=null},{invite=currentFurniture.id},uid,model,privateLists,{removeShared=currentFurniture})
     else if(current!=null&&currentLocal!=null&&current.local!=null){
         key(currentLocal.id){InventoryScreen(listOf(currentLocal),inventory.filter{it.furnitureId==currentLocal.id},model,if(current.local.id==legacy.id)""else current.local.id,current.title,{localId=null},{f->if(uid=="local")online("compartir este mueble")else publishFurniture=f},privateLists,directId=currentLocal.id)}
     }else{
@@ -221,7 +243,28 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
                 groups.filterNot{it.owned}.forEach{h->CollectionTile(h.title,h.children.size.toString()+" muebles disponibles",true,{selected=h.key}){Icon(Icons.Outlined.Home,null)}}
             }else{
                 TextButton(onClick={selected=null}){Text("‹ Casas")}
-                Row(verticalAlignment=Alignment.CenterVertically){Text(current.title,Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium);if(current.owned)IconButton(onClick={if(uid=="local")online("compartir este hogar")else if(current.local!=null)publishHome=true else current.cloud?.let{invite=it.id}}){Icon(Icons.Outlined.Share,"Compartir hogar")}}
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Text(current.title,Modifier.weight(1f),style=MaterialTheme.typography.headlineMedium)
+                    if(current.owned){
+                        var actions by remember(current.key){mutableStateOf(false)}
+                        Box {
+                            IconButton(onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones de la casa")}
+                            DropdownMenu(actions,{actions=false}){
+                                DropdownMenuItem(text={Text("Compartir")},onClick={
+                                    actions=false
+                                    if(uid=="local")online("compartir este hogar")else if(current.local!=null)publishHome=true else current.cloud?.let{invite=it.id}
+                                })
+                                DropdownMenuItem(text={Text("Eliminar casa",color=MaterialTheme.colorScheme.error)},
+                                    enabled=!access.busy,onClick={
+                                        actions=false
+                                        val cloud=current.cloud
+                                        if(cloud!=null)removeShared=cloud else removeHome=current.local
+                                    })
+
+                            }
+                        }
+                    }
+                }
                 if(!current.owned)Text(if(current.cloud==null)"Solo los muebles que te han compartido" else roleLabel(current.cloud.role),style=MaterialTheme.typography.bodySmall)
                 OutlinedTextField(query,{query=it.take(160)},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Buscar muebles o contenido")},leadingIcon={Icon(Icons.Outlined.Search,null)},shape=RoundedCornerShape(16.dp))
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
@@ -251,6 +294,27 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
             }
         }
     }
+    removeHome?.let { home ->
+        Confirm("¿Eliminar ${home.name}?", "Se eliminarán sus muebles y su contenido privado. Las versiones compartidas se conservan.", { removeHome=null }) {
+            model.delete(if(home.id==legacy.id)"" else home.id,Kind.HOME) { selected=null }
+        }
+    }
+    removeShared?.let { entry ->
+        val house=entry.kind=="house"
+        val privateId=if(house)own.find{it.id==entry.sourceId}?.let{if(it.id==legacy.id)"" else it.id}
+            else furniture.find{it.id==entry.sourceId}?.id
+        val kind=if(house)Kind.HOME else Kind.FURNITURE
+        val consequence=if(house)"La casa y sus muebles dejarán de estar disponibles para todos los participantes."
+            else "El mueble y su contenido dejarán de estar disponibles para todos los participantes."
+        Confirm("¿Eliminar ${entry.title}?", consequence+if(privateId!=null)" También se eliminará tu copia privada." else "", { removeShared=null }) {
+            access.work(refresh=false,finished={failure->
+                if(failure==null){
+                    if(house)selected=null else remote=null
+                    if(privateId!=null&&model.scope.value==uid)model.delete(privateId,kind)
+                }
+            }) { it.archive(entry) }
+        }
+    }
     if(create)CollectionNameDialog("Nuevo hogar",{create=false},{model.save(Home(name=it))})
     if(createLocalFurniture&&current?.local!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=if(current.local.id==legacy.id)""else current.local.id),{createLocalFurniture=false},{f->model.save(f);createLocalFurniture=false})
     if(createFurniture&&current?.cloud!=null)FurnitureEditor(Furniture(name="",type=FurnitureType.OTHER,homeId=current.cloud.sourceId),{createFurniture=false},{f->access.work{it.addFurniture(requireNotNull(current.cloud),f)};createFurniture=false})
@@ -258,7 +322,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     publishFurniture?.let{f->if(current?.local!=null)Confirm("Compartir solo "+f.name,"Se publicará exclusivamente este mueble y su contenido, sin fotos locales. El destinatario verá el nombre del hogar, pero no otros muebles. El original local se conserva como recuperación.",{publishFurniture=null},{val h=current.local;access.work{api->val s=api.publishFurniture(h,f,inventory);localId=null;remote=s.id;invite=s.id}})}
     invite?.let{id->access.spaces.find{it.id==id}?.let{s->CollectionInvite(s,access){invite=null}}}
 }
-@Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit,uid:String,model:PlanidroidModel,lists:List<ShoppingList>){
+@Composable private fun SharedFurnitureDetail(s:SharedSpace,access:CollectionAccess,back:()->Unit,invite:()->Unit,uid:String,model:PlanidroidModel,lists:List<ShoppingList>,removeFurniture:()->Unit){
     val data=remember(s.id,s.version,s.body){decode<SharedFurniture>(s.body)}
     val f=data.furniture;val write=s.role in listOf("owner","editor","admin")
     var consume by remember(s.id){mutableStateOf<Item?>(null)};var restock by remember(s.id){mutableStateOf<Pair<Item,Boolean>?>(null)}
@@ -270,12 +334,20 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         if(write){val exhausted=data.items.filter(InventoryConsumption::pending);if(exhausted.isNotEmpty())Box(Modifier.padding(horizontal=16.dp,vertical=8.dp)){RestockBanner(exhausted,{i,recipe->restock=i to recipe},{old->if(!access.busy)update(data.copy(items=data.items.map{if(it.id==old.id&&InventoryConsumption.pending(it))it.copy(restockAmount=0.0)else it}))},!access.busy)}}
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         TextButton(onClick=back){Text("‹ Muebles")}
-        Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner")IconButton(onClick=invite){Icon(Icons.Outlined.Share,"Compartir mueble")}}
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            Column(Modifier.weight(1f)){Text("Interior");ZoneBoard(LayoutGrid.zones(f).filterNot{it.door},data.items,false,selected,{selected=it.name},{})}
-            if(LayoutGrid.zones(f).any{it.door})Column(Modifier.weight(1f)){Text("Puerta");ZoneBoard(LayoutGrid.zones(f).filter{it.door},data.items,false,selected,{selected=it.name},{})}
-        }
-        if(selected!=null)TextButton(onClick={selected=null}){Text("Mostrar todos")}
+        Row(verticalAlignment=Alignment.CenterVertically){FurnitureGlyph(f.type,Modifier.size(50.dp));Column(Modifier.weight(1f)){Text(s.title,style=MaterialTheme.typography.headlineMedium);Text(roleLabel(s.role),style=MaterialTheme.typography.bodySmall)};if(s.role=="owner"){
+            var actions by remember(s.id){mutableStateOf(false)}
+            Box{
+                IconButton(onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones del mueble")}
+                DropdownMenu(actions,{actions=false}){
+                    DropdownMenuItem(text={Text("Compartir")},onClick={actions=false;invite()})
+                    DropdownMenuItem(text={Text("Eliminar mueble",color=MaterialTheme.colorScheme.error)},enabled=!access.busy,onClick={actions=false;removeFurniture()})
+                }
+            }
+        }}
+        val initialVisual=LocalViewPreferences.current.inventory=="Visual"
+        var visual by remember(s.id,initialVisual){mutableStateOf(initialVisual)}
+        FilterChip(visual,{visual=!visual;selected=null},label={Text("Ver distribución")})
+        if(visual)FurnitureMap(LayoutGrid.zones(f),data.items,selected){selected=it}
         if(write)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=selected?:f.compartments.firstOrNull()?:"General")}){Text("Añadir contenido")};TextButton(enabled=!access.busy,onClick={layout=true}){Text("Distribución")}}
         data.items.filter{selected==null||it.compartment==selected}.forEach{i->GlassCard(tint=if(s.role=="owner")Mint else Lilac){
             Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(i.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(i.name,style=MaterialTheme.typography.titleMedium);Text(amountText(i.amount)+" "+i.unit+" · "+i.compartment,style=MaterialTheme.typography.bodySmall)};if(write)IconButton(enabled=!access.busy,onClick={edit=i}){Icon(Icons.Outlined.Edit,"Editar")}}

@@ -42,27 +42,38 @@ service cloud.firestore {
     function member(id) { return get(/databases/$(database)/documents/memberships/$(id + '~' + request.auth.token.email)); }
     function isOwner(id) { return signed() && space(id).data.ownerUid == request.auth.uid; }
     function role(id, roles) { return signed() && member(id).data.status == 'accepted' && member(id).data.acceptedUid == request.auth.uid && member(id).data.role in roles; }
+    function active(d) { return d.get('archived',false) == false; }
+    function collectionActive(d) {
+      return active(d) && (d.kind!='furniture' || active(space(d.parentId).data));
+    }
     function inherited(d, roles) {
       return signed() && d.kind=='furniture' && d.parentId is string && d.parentId.size()>0 &&
-        space(d.parentId).data.kind=='house' && space(d.parentId).data.ownerUid==d.ownerUid &&
+        space(d.parentId).data.kind=='house' && active(space(d.parentId).data) && space(d.parentId).data.ownerUid==d.ownerUid &&
         role(d.parentId,roles);
     }
-    function canRead(id) { return isOwner(id) || role(id,['reader','editor','admin']) || inherited(space(id).data,['reader','editor','admin']); }
+    function canRead(id) { return signed() && collectionActive(space(id).data) && (isOwner(id) || role(id,['reader','editor','admin']) || inherited(space(id).data,['reader','editor','admin'])); }
     function manager(id) { return isOwner(id) || role(id,['admin']); }
-    function writer(id) { return isOwner(id) || role(id,['editor','admin']) || inherited(space(id).data,['editor','admin']); }
+    function writer(id) { return signed() && collectionActive(space(id).data) && (isOwner(id) || role(id,['editor','admin']) || inherited(space(id).data,['editor','admin'])); }
     function validSpace() {
       let d=request.resource.data;
       return d.keys().hasOnly(['ownerUid','kind','title','body','version','updatedAt','sourceId','parentId','homeName']) &&
         d.kind in ['task','project','home','shopping','house','furniture','shopping_list'] && d.ownerUid is string && d.title is string && d.title.size()>0 && d.title.size()<=180 &&
         d.body is string && d.body.size()<=50000 && d.version is int && d.updatedAt==request.time &&
         (!(d.kind in ['house','furniture','shopping_list']) || (d.sourceId is string && d.sourceId.size()>0 && d.sourceId.size()<=180 && d.parentId is string && d.homeName is string && d.homeName.size()<=180 &&
-          (d.kind=='furniture' ? (d.parentId.size()>0 && space(d.parentId).data.kind=='house' && space(d.parentId).data.ownerUid==d.ownerUid) : d.parentId=='')));
+          (d.kind=='furniture' ? (d.parentId.size()>0 && space(d.parentId).data.kind=='house' && active(space(d.parentId).data) && space(d.parentId).data.ownerUid==d.ownerUid) : d.parentId=='')));
     }
     match /sharedSpaces/{id} {
-      allow get: if signed() && (resource == null || resource.data.ownerUid==request.auth.uid || role(id,['reader','editor','admin']) || inherited(resource.data,['reader','editor','admin']));
+      allow get: if signed() && (resource == null || resource.data.ownerUid==request.auth.uid || (collectionActive(resource.data) && (role(id,['reader','editor','admin']) || inherited(resource.data,['reader','editor','admin']))));
       allow list: if signed() && (resource.data.ownerUid==request.auth.uid || inherited(resource.data,['reader','editor','admin']));
       allow create: if signed() && validSpace() && request.resource.data.ownerUid==request.auth.uid && request.resource.data.version==1;
-      allow update: if writer(id) && validSpace() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body','version','updatedAt']) && request.resource.data.version==resource.data.version+1;
+      allow update: if request.resource.data.version==resource.data.version+1 && (
+        (writer(id) && validSpace() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','body','version','updatedAt'])) ||
+        (isOwner(id) && collectionActive(resource.data) && resource.data.kind in ['house','furniture','shopping_list'] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived','body','version','updatedAt']) &&
+          request.resource.data.archived==true &&
+          request.resource.data.body==(resource.data.kind=='furniture' ? '{"furniture":{"name":"","type":"OTHER"}}' : '{}') &&
+          request.resource.data.updatedAt==request.time)
+      );
       allow delete: if false;
       match /comments/{cid} {
         allow read: if canRead(id);

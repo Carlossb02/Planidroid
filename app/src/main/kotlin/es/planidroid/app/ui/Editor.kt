@@ -69,7 +69,12 @@ import kotlinx.coroutines.launch
     var daily by remember(task.id){mutableStateOf(hints.dailyMinutes.takeIf{it>0}?.toString().orEmpty())}
     var countText by remember(task.id){mutableStateOf(hints.topicCount.takeIf{it>0}?.toString().orEmpty())}
     var minutesText by remember(task.id){mutableStateOf(TaskConstraints.remaining(task,kept,capturedNow).takeIf{it>0}?.toString().orEmpty())}
-    var days by remember(task.id){mutableStateOf(StudyIntent.availableDays(hints))}
+    val workdaysOnly=LocalViewPreferences.current.workdaysOnly
+    var days by remember(task.id){
+        val available=StudyIntent.availableDays(hints)
+        val hasExplicitDays=hints.availableWeekdays.isNotEmpty()||hints.daysPerWeek>0
+        mutableStateOf(if(workdaysOnly&&!hasExplicitDays)available.filter{it.value<=5}.toSet().ifEmpty{available} else available)
+    }
     var revision by remember(task.id){mutableStateOf("")}
     var feedback by remember(task.id){mutableStateOf("")}
     var advanced by remember{mutableStateOf(false)}
@@ -106,7 +111,8 @@ import kotlinx.coroutines.launch
         revision="";feedback="Propuesta recalculada. Revisa las sesiones."
     }
     val ctx=LocalContext.current;val coroutine=rememberCoroutineScope()
-    var keepBreaks by remember{mutableStateOf(true)}
+    val reserveBreaks=LocalViewPreferences.current.reserveBreaks
+    var keepBreaks by remember{mutableStateOf(reserveBreaks)}
     var aiBusy by remember{mutableStateOf(false)};var aiConsent by remember{mutableStateOf(false)};var connect by remember{mutableStateOf(false)}
     fun reviseWithGemini(){
         val request=revision.trim()

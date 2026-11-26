@@ -31,9 +31,9 @@ import javax.net.ssl.HttpsURLConnection
     val name=user?.displayName.orEmpty().ifBlank{user?.email.orEmpty().substringBefore('@')}
     val initials=name.trim().split(Regex("\\s+")).filter{it.isNotBlank()}.take(2).joinToString(""){it.take(1).uppercase()}
     val photo=user?.photoUrl?.toString().orEmpty()
-    val bitmap by produceState<Bitmap?>(null,uid,photo){
-        value=null
-        if(photo.isNotBlank())value=withContext(Dispatchers.IO){
+    var bitmap by remember(uid,photo){mutableStateOf<Bitmap?>(null)}
+    LaunchedEffect(uid,photo){
+        if(photo.isNotBlank())bitmap=withContext(Dispatchers.IO){
             try{
                 val url=URL(photo)
                 if(url.protocol!="https")null else {

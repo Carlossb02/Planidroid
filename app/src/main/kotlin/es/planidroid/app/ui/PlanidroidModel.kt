@@ -15,6 +15,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 private val Context.prefs by preferencesDataStore("appearance")
+internal data class ViewPreferences(
+    val calendar:String="Semana",
+    val inventory:String="Visual",
+    val expiryDays:Int=7,
+    val workdaysOnly:Boolean=false,
+    val reserveBreaks:Boolean=true
+)
+
+internal val LocalViewPreferences=androidx.compose.runtime.staticCompositionLocalOf { ViewPreferences() }
+
 class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     private val db=PlanidroidDb.get(app); private val dao=db.records(); private val auth=Cloud.auth(app)
     private val _scope=MutableStateFlow(auth?.currentUser?.uid ?: "local"); val scope=_scope.asStateFlow()
@@ -38,6 +48,16 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     val external=scope.flatMapLatest { uid->es.planidroid.app.sync.CalendarSync.observe(app,uid).map{uid to it} }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),"local" to emptyList())
     val theme=app.prefs.data.map { it[stringPreferencesKey("theme")] ?: "Sistema" }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),"Sistema")
     val glass=app.prefs.data.map { it[booleanPreferencesKey("glass")] ?: false }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),false)
+    internal val viewPreferences=app.prefs.data.map {
+        ViewPreferences(
+            calendar=it[stringPreferencesKey("calendar_view")] ?: "Semana",
+            inventory=it[stringPreferencesKey("inventory_view")] ?: "Visual",
+            expiryDays=it[intPreferencesKey("inventory_expiry_days")] ?: 7,
+            workdaysOnly=it[booleanPreferencesKey("agenda_workdays_only")] ?: false,
+            reserveBreaks=it[booleanPreferencesKey("agenda_reserve_breaks")] ?: true
+        )
+    }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),ViewPreferences())
+    internal fun <T> viewSetting(key:Preferences.Key<T>,value:T)=run { app.prefs.edit { it[key]=value } }
     val message=MutableStateFlow(""); val busy=MutableStateFlow(false); val syncState=MutableStateFlow("Sin sincronizar")
     fun configured()=auth!=null
     fun email()=auth?.currentUser?.email.orEmpty()
@@ -141,18 +161,36 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         }
     } } }
     fun deleteShopping(ids:Set<String>,listId:String){val uid=scope.value;run{db.withTransaction{ids.forEach{id->val row=dao.get(uid,id);if(row!=null&&!row.deleted&&row.kind==Kind.SHOPPING.name&&decode<Shopping>(row.payload).listId==listId)dao.remove(uid,id)}}}}
-    fun delete(id: String,kind: Kind) { val s=scope.value; run { db.withTransaction {
+    fun delete(id: String,kind: Kind, finished:()->Unit={}) { val s=scope.value; run { db.withTransaction {
         val all=dao.all(s).filterNot { it.deleted }
         when(kind) {
             Kind.SESSION -> {val session=all.find{it.id==id&&it.kind==Kind.SESSION.name}?.let{decode<Session>(it.payload)};if(session!=null&&session.calendarTitle.isNotBlank()&&!session.isBreak&&all.none{it.id!=id&&it.kind==Kind.SESSION.name&&decode<Session>(it.payload).taskId==session.taskId}){val task=all.find{it.id==session.taskId&&it.kind==Kind.TASK.name}?.let{decode<Task>(it.payload)};if(task!=null){dao.save(s,task.id,Kind.TASK.name,encode(task.copy(reminder=false,due="")));Reminders.cancel(getApplication(),s,task.id)}}}
             Kind.TASK -> {all.filter { it.kind==Kind.SESSION.name && decode<Session>(it.payload).taskId==id }.forEach { dao.remove(s,it.id) };all.filter{it.kind==Kind.TASK.name&&it.id!=id}.map{decode<Task>(it.payload)}.filter{id in it.dependencies||id in it.overlapWith}.forEach{dao.save(s,it.id,Kind.TASK.name,encode(it.copy(dependencies=it.dependencies-id,overlapWith=it.overlapWith-id)))}}
-            Kind.FURNITURE -> all.filter { it.kind==Kind.ITEM.name && decode<Item>(it.payload).furnitureId==id }.forEach { dao.remove(s,it.id) }
-            Kind.HOME -> {require(all.none{it.kind==Kind.FURNITURE.name&&decode<Furniture>(it.payload).homeId==id}){"Mueve los muebles antes de eliminar el hogar"}}
-            Kind.SHOPPING_LIST -> {require(all.none{(it.kind==Kind.SHOPPING.name&&decode<Shopping>(it.payload).listId==id)||(it.kind==Kind.PURCHASE.name&&decode<Purchase>(it.payload).listId==id)}){"La lista contiene productos o historial"}}
+            Kind.FURNITURE, Kind.HOME -> {
+                val furnitureIds = if (kind == Kind.FURNITURE) setOf(id) else all
+                    .filter { it.kind == Kind.FURNITURE.name && decode<Furniture>(it.payload).homeId == id }
+                    .map { it.id }.toSet()
+                val itemIds = all.filter { it.kind == Kind.ITEM.name && decode<Item>(it.payload).furnitureId in furnitureIds }
+                    .map { it.id }.toSet()
+                all.filter { it.kind == Kind.SHOPPING.name }.map { decode<Shopping>(it.payload) }
+                    .filter { it.itemId in itemIds }.forEach {
+                        val unlinked = it.copy(itemId = "")
+                        dao.save(s, unlinked.id, Kind.SHOPPING.name, encode(unlinked))
+                    }
+                itemIds.forEach { dao.remove(s, it) }
+                if (kind == Kind.HOME) furnitureIds.forEach { dao.remove(s, it) }
+            }
+            Kind.SHOPPING_LIST -> all.filter {
+                when (it.kind) {
+                    Kind.SHOPPING.name -> decode<Shopping>(it.payload).listId == id
+                    Kind.PURCHASE.name -> decode<Purchase>(it.payload).listId == id
+                    else -> false
+                }
+            }.forEach { dao.remove(s, it.id) }
             Kind.GROUP -> all.filter { it.kind==Kind.TASK.name }.map { decode<Task>(it.payload) }.filter { it.groupId==id }.forEach { dao.save(s,it.id,Kind.TASK.name,encode(it.copy(groupId=""))) }
             else -> Unit
-        }; dao.remove(s,id)
-    };if(kind==Kind.TASK)Reminders.cancel(getApplication(),s,id);if(kind==Kind.SESSION)SessionReminders.cancel(getApplication(),s,id);SessionReminders.refresh(getApplication(),s);message.value=if(kind==Kind.TASK)"Tarea eliminada" else "Elemento eliminado" } }
+        }; if (id.isNotBlank() && all.any { it.id == id && it.kind == kind.name }) dao.remove(s,id)
+    };if(kind==Kind.TASK)Reminders.cancel(getApplication(),s,id);if(kind==Kind.SESSION)SessionReminders.cancel(getApplication(),s,id);if(kind==Kind.TASK||kind==Kind.SESSION)SessionReminders.refresh(getApplication(),s);message.value=if(kind==Kind.TASK)"Tarea eliminada" else "Elemento eliminado";finished() } }
     suspend fun backup(): String=encode(BackupIO.create(dao.all(scope.value),theme.value,glass.value))
     fun restoreLocalReplace(b:Backup){val uid=scope.value;run{require(uid=="local"){"Reemplazar solo se permite en modo local"};val ctx=getApplication<Application>();db.withTransaction{val old=dao.all(uid);val snapshot=encode(BackupIO.create(old,theme.value,glass.value));val dir=java.io.File(ctx.filesDir,"recovery/$uid").apply{mkdirs()};val file=java.io.File(dir,"before-${System.currentTimeMillis()}.json");kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){file.writeText(snapshot)};dao.clearScope(uid);b.entries.forEach{dao.save(uid,it.id,it.kind.name,it.payload)}};b.entries.filter{it.kind==Kind.TASK}.forEach{Reminders.update(ctx,uid,decode<Task>(it.payload))};setting(b.theme,b.glass);message.value="Restauración completada. La copia anterior se conserva en recuperación local."}}
     suspend fun lastRecovery():String{val ctx=getApplication<Application>();val uid=scope.value;return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){val file=java.io.File(ctx.filesDir,"recovery/$uid").listFiles()?.filter{it.name.endsWith(".json")}?.maxByOrNull{it.lastModified()}?:error("No hay copia de recuperación");file.readText()}}

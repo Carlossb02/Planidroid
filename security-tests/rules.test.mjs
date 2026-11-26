@@ -45,6 +45,31 @@ test('house membership inherits furniture access; direct furniture sharing does 
  await assertFails(getDoc(sp(c,'fridge1')));await assertSucceeds(getDoc(sp(b,'fridge1')));
 });
 
+test('collection archive is owner-only and closes direct and inherited access',async()=>{
+ const a=user('A'), b=user('B');
+ const space=(db,id)=>doc(db,'sharedSpaces',id);
+ const record=(kind,id,parentId='')=>({ownerUid:'A',kind,title:id,body:'{}',version:1,updatedAt:serverTimestamp(),sourceId:id,parentId,homeName:'Casa'});
+ const archive=(body='{}')=>({archived:true,body,version:2,updatedAt:serverTimestamp()});
+ await assertSucceeds(setDoc(space(a,'archive-house'),record('house','archive-house')));
+ await assertSucceeds(setDoc(space(a,'archive-child'),record('furniture','archive-child','archive-house')));
+ await assertSucceeds(setDoc(space(a,'archive-list'),record('shopping_list','archive-list')));
+ for(const id of ['archive-house','archive-child','archive-list']){
+  const member=db=>doc(db,'memberships',id+'~b@example.com');
+  await assertSucceeds(setDoc(member(a),{spaceId:id,email:'b@example.com',role:'editor',status:'pending',invitedBy:'A',acceptedUid:'',expiresAt:Timestamp.fromMillis(Date.now()+86400000),updatedAt:serverTimestamp()}));
+  await assertSucceeds(updateDoc(member(b),{status:'accepted',acceptedUid:'B',updatedAt:serverTimestamp()}));
+  await assertSucceeds(getDoc(space(b,id)));
+ }
+ await assertFails(updateDoc(space(b,'archive-list'),archive()));
+ await assertFails(updateDoc(space(a,'archive-list'),archive('{"private":"data"}')));
+ await assertSucceeds(updateDoc(space(a,'archive-list'),archive()));
+ await assertFails(getDoc(space(b,'archive-list')));
+ await assertFails(updateDoc(space(a,'archive-list'),{archived:false,version:3,updatedAt:serverTimestamp()}));
+ await assertSucceeds(updateDoc(space(a,'archive-house'),archive()));
+ await assertFails(getDoc(space(b,'archive-child')));
+ await assertFails(getDocs(query(collection(b,'sharedSpaces'),where('ownerUid','==','A'),where('kind','==','furniture'),where('parentId','==','archive-house'))));
+ await assertFails(setDoc(space(a,'archive-late-child'),record('furniture','archive-late-child','archive-house')));
+});
+
 test('approval is manual; unapproved and revoked users cannot read or write application data',async()=>{
  const x=user('X'), a=user('A');
  const payload={kind:'TASK',payload:'{}',deleted:false,version:1,updatedAt:serverTimestamp()};

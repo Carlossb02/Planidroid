@@ -33,7 +33,8 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
 @Composable fun CalendarScreen(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,save:(Session)->Unit,delete:(Session)->Unit,plan:()->Unit,external:List<ExternalEvent> = emptyList(),addEvent:(LocalDate)->Unit = {}){
     var dateText by rememberSaveable{mutableStateOf(LocalDate.now().toString())}
     val date=LocalDate.parse(dateText)
-    var mode by rememberSaveable{mutableStateOf("Semana")}
+    val initialView=LocalViewPreferences.current.calendar
+    var mode by rememberSaveable(initialView){mutableStateOf(initialView)}
     var selectedId by rememberSaveable{mutableStateOf<String?>(null)}
     var selectedExternal by remember{mutableStateOf<ExternalEvent?>(null)}
     val selected=sessions.find{it.id==selectedId}

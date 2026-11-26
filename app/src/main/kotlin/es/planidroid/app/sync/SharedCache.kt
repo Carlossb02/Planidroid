@@ -25,6 +25,14 @@ internal class SharedCache(ctx:Context,private val uid:String){
     fun store(spaces:List<SharedSpace>,invites:List<Membership>)=synchronized(lock){
         check(prefs.edit().putString("snapshot",encode(SharedSnapshot(spaces,invites,System.currentTimeMillis()))).commit())
     }
+    fun removeArchived(id:String)=synchronized(lock){
+        val current=snapshot()
+        val removed=current.spaces.filter{it.id==id||it.parentId==id}.map{it.id}.toSet()+id
+        check(prefs.edit()
+            .putString("snapshot",encode(current.copy(spaces=current.spaces.filterNot{it.id in removed})))
+            .putString("pending",encode(pending().filterNot{it.id in removed}))
+            .commit())
+    }
     fun invalidate()=synchronized(lock){prefs.edit().remove("snapshot").commit()}
     fun enqueue(s:SharedSpace,title:String,body:String)=synchronized(lock){
         val current=pending();val old=current.find{it.id==s.id}
