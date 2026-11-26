@@ -19,7 +19,7 @@ PK Room `(scope,id)`, entidad Record con kind, payload, deleted, dirty, baseVers
 | Cambiar owner / borrar espacio | No (pendiente) | No | No | No | No |
 
 ## ADR 004 — Planificador determinista
-Planner trabaja sobre intervalos en zona horaria local y resta disponibilidad ocupada. AgendaPlanner ordena por fecha límite y prioridad, desglosa fases, respeta fecha inicial, margen, días bloqueados y máximo de sesión. Las dependencias incompletas impiden planificar (no se programa todavía todo el grafo). La propuesta incluye déficit; replanificación sustituye solo sesiones futuras no realizadas que fueron seleccionadas. Se valida de nuevo en transacción antes de guardar. Google Calendar provee bloqueos externos cuando está habilitado. 
+Planner trabaja sobre intervalos en zona horaria local y resta disponibilidad ocupada. AgendaPlanner ordena por fecha límite y prioridad, desglosa fases, respeta fecha inicial, margen, días bloqueados y máximo de sesión. Las dependencias incompletas impiden planificar (no se programa todavía todo el grafo). La propuesta incluye déficit; replanificación sustituye solo sesiones futuras no realizadas que fueron seleccionadas. Se valida de nuevo en transacción antes de guardar. Los eventos creados e importados bloquean su horario en la agenda.
 
 ## ADR 005 — IA y OAuth opcionales
 LocalAi es parser/reglas, no LLM. GeminiGateway usa proxy autenticado, consentimiento explícito, campos acotados y propuesta revisable. CalendarSync usa OAuth independiente, token efímero, caché de externos, identificador estable y ETag. No se suben fotos, notas privadas ni contactos a Calendar. Notificaciones locales WorkManager y resumen aproximado, no FCM. 

@@ -18,13 +18,14 @@ import es.planidroid.app.domain.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 
-@Composable fun Home(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,capture:()->Unit,inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,spaces:()->Unit,count:Int,buyCount:Int,saveSession:(Session)->Unit,focus:()->Unit,external:List<ExternalEvent> = emptyList(),assistant:()->Unit={}){
+@Composable fun Home(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,capture:()->Unit,inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,spaces:()->Unit,count:Int,buyCount:Int,saveSession:(Session)->Unit,focus:()->Unit,assistant:()->Unit={},openEvent:()->Unit=calendar){
     val today=LocalDate.now();val now=System.currentTimeMillis()
     val todaySessions=sessions.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today}.sortedBy{it.start}
     val day=TimelineLayout.bounds(today,ZoneId.systemDefault())
-    val work=todaySessions.filterNot{it.isBreak};val done=work.count{it.done}
-    val active=tasks.filter{it.status !in listOf(Status.DONE,Status.ARCHIVED)}
-    val next=(todaySessions.filter{!it.done&&it.end>now}.map{CalendarEntry(it.start,it.end,it,null)}+external.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today&&it.end>now}.map{CalendarEntry(it.start,it.end,null,it)}).sortedBy{it.start}
+    val work=todaySessions.filterNot{it.isBreak||it.calendarTitle.isNotBlank()};val done=work.count{it.done}
+    val eventAnchors=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
+    val active=tasks.filter{it.id !in eventAnchors&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+    val next=todaySessions.filter{!it.done&&it.end>now}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
         item{
             Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",java.util.Locale("es","ES"))).replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -36,15 +37,15 @@ import java.time.format.DateTimeFormatter
             }
         }
         if(next.isNotEmpty())item{Text("A continuación",style=MaterialTheme.typography.titleLarge)}
-        items(next.take(3),key={it.session?.id?:"external-"+it.external?.id}){entry->
-            val s=entry.session;val t=tasks.find{it.id==s?.taskId}
-            val tint=if(s?.isBreak==true)MaterialTheme.colorScheme.outline else if(s!=null)taskColor(t)else Lilac
-            Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().clickable{if(t!=null&&s?.isBreak==false)edit(t)else calendar()}){
+        items(next.take(3),key={it.id}){entry->
+            val s=entry;val t=tasks.find{it.id==s.taskId}
+            val tint=if(s.isBreak)MaterialTheme.colorScheme.outline else if(s.calendarTitle.isNotBlank())Lilac else taskColor(t)
+            Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().clickable{if(s.calendarTitle.isNotBlank())openEvent() else if(t!=null&&!s.isBreak)edit(t)else calendar()}){
                 Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
                     Text(time(entry.start),style=MaterialTheme.typography.labelLarge,modifier=Modifier.width(54.dp))
                     Box(Modifier.width(4.dp).height(34.dp).background(tint,RoundedCornerShape(3.dp)))
-                    Column(Modifier.weight(1f).padding(horizontal=12.dp)){Text(if(s?.isBreak==true)"Descanso" else entry.external?.title?:t?.title?:"Sesión",style=MaterialTheme.typography.titleMedium);Text("Hasta "+time(entry.end),style=MaterialTheme.typography.bodySmall)}
-                    if(s!=null&&!s.isBreak)Checkbox(s.done,{saveSession(s.copy(done=it))})
+                    Column(Modifier.weight(1f).padding(horizontal=12.dp)){Text(if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title?:"Sesión"},style=MaterialTheme.typography.titleMedium);Text("Hasta "+time(entry.end),style=MaterialTheme.typography.bodySmall)}
+                    if(!s.isBreak&&s.calendarTitle.isBlank())Checkbox(s.done,{saveSession(s.copy(done=it))})
                 }
             }
         }

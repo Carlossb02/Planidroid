@@ -33,9 +33,7 @@ import kotlinx.coroutines.CancellationException
     val ctx=LocalContext.current;val online=LocalOnlineAccess.current;val coroutine=rememberCoroutineScope()
     val busy by model.busy.collectAsStateWithLifecycle()
     val approval by model.approval.collectAsStateWithLifecycle()
-    val calendar by remember(uid){ServiceHealth.observe(ctx,uid,"calendar")}.collectAsStateWithLifecycle(initialValue=false)
     val gemini by remember(uid){ServiceHealth.observe(ctx,uid,"gemini")}.collectAsStateWithLifecycle(initialValue=false)
-    var calendarOpen by remember(uid){mutableStateOf(false)}
     var logout by remember(uid){mutableStateOf(false)}
     var geminiOpen by remember(uid){mutableStateOf(false)}
     var keyConfigured by remember(uid){mutableStateOf(AiConfig.configured(ctx,uid))}
@@ -59,6 +57,10 @@ import kotlinx.coroutines.CancellationException
         Row(verticalAlignment=Alignment.CenterVertically){
             Text("Tarjetas con más color",Modifier.weight(1f))
             Switch(glass,{model.setting(theme,it)})
+        }
+        if(android.os.Build.VERSION.SDK_INT>=31)Row(verticalAlignment=Alignment.CenterVertically){
+            Text("Colores del dispositivo",Modifier.weight(1f))
+            Switch(preferences.systemColors,{model.viewSetting(booleanPreferencesKey("system_colors"),it)})
         }
         Choice("Vista inicial del calendario",listOf("Día","Semana","Mes","Agenda"),preferences.calendar,{it}){
             model.viewSetting(stringPreferencesKey("calendar_view"),it)
@@ -84,14 +86,11 @@ import kotlinx.coroutines.CancellationException
             HorizontalDivider()
             ServiceRow("Sincronización",uid!="local"&&approval==true&&health,if(pending>0)"$pending cambios pendientes" else if(approval==null)"Sin conexión / sin verificar" else if(health)"Última sincronización correcta" else "Sin sincronización reciente"){if(uid=="local")online("sincronizar")else syncOpen=true}
             HorizontalDivider()
-            ServiceRow("Google Calendar",uid!="local"&&calendar,if(calendar)"Última comprobación correcta" else "Conectar o comprobar"){if(uid=="local")online("conectar Google Calendar")else calendarOpen=true}
-            HorizontalDivider()
             ServiceRow("Gemini",uid!="local"&&keyConfigured&&gemini,if(keyConfigured)if(gemini)"Última consulta correcta" else "Clave guardada · sin verificar" else "Opcional · conectar clave personal"){geminiOpen=true}
         }
     }
     if(notificationsOpen)AlertDialog(onDismissRequest={notificationsOpen=false},title={Text("Avisos")},text={Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())){NotificationSettings(model,uid)}},confirmButton={TextButton(onClick={notificationsOpen=false}){Text("Cerrar")}})
     if(geminiOpen)PersonalGeminiDialog(uid,{geminiOpen=false;keyConfigured=AiConfig.configured(ctx,uid)})
-    if(calendarOpen)AlertDialog(onDismissRequest={calendarOpen=false},title={Text("Google Calendar")},text={Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())){CalendarSettings(model,uid)}},confirmButton={TextButton(onClick={calendarOpen=false}){Text("Cerrar")}})
     if(syncOpen)AlertDialog(onDismissRequest={syncOpen=false},title={Text("Sincronización")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(sync);Button(enabled=!busy,onClick={model.sync()}){Text("Sincronizar ahora")};Row(verticalAlignment=Alignment.CenterVertically){Text("Sincronización automática · cambios pendientes al recuperar conexión",Modifier.weight(1f))}}},confirmButton={TextButton(onClick={syncOpen=false}){Text("Cerrar")}})
     if(logout)Confirm("Cerrar sesión","Tus datos locales se conservan. La clave personal de Gemini se elimina de este dispositivo.",{logout=false},{model.logout()})
 }

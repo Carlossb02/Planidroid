@@ -102,9 +102,9 @@ fun ShoppingAssistant(
         }
     }
 
-    Dialog(onDismissRequest=close, properties=DialogProperties(usePlatformDefaultWidth=false)) {
+    Dialog(onDismissRequest=close, properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)) {
                 Row(Modifier.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=close) { Icon(Icons.Default.Close, "Cerrar") }
                     Text("Preguntar a Gemini", style=MaterialTheme.typography.titleLarge)

@@ -9,6 +9,11 @@ Al arrancar se consulta `https://api.github.com/repos/Carlossb02/Planidroid/rele
 
 El APK se verifica por tamaño, digest, applicationId, versionCode, versionName y certificados actuales. La rotación de claves no está soportada. El workflow CI produce APK debug para pruebas, no una release instalable sobre la versión firmada de producción. No publicar APK debug como actualización estable. No se ha podido probar el flujo real en Android en este entorno.
 
+## Preparar 0.1.3.0
+- Versión Android 0.1.3.0 (versionCode 22). Incluye navegación con márgenes seguros, iconos con color y siluetas claras, compra por lotes, acciones rápidas de tareas, conversación con propuestas aplicables de Gemini e importación de calendarios con revisión. La app deja de conectarse a Google Calendar.
+- Antes de publicar, comprueba la actualización desde la última versión estable sobre una instalación de prueba. Verifica una consulta de Gemini con la clave de esa cuenta y prueba el borrado compartido con una cuenta propietaria y otra colaboradora.
+- Despliega las reglas Firestore de este cambio para habilitar el borrado compartido. Genera el APK con la firma de producción y pasa `tools/verify-release.ps1` con el APK estable anterior. Publica `Planidroid_v0.1.3.0.apk` bajo `v0.1.3.0` solo tras superar esas comprobaciones.
+
 ## Primera publicación y transición desde compilaciones de desarrollo
 La primera versión oficial es 0.1.0.0 (versionCode 9). Las compilaciones de desarrollo 0.5.x tienen un versionName numéricamente superior; su actualizador no detectará este cambio de numeración. Si ya instalaste una, instala manualmente 0.1.0.0 con la misma firma y conserva tus datos. Android permite la actualización porque el versionCode aumenta. A partir de 0.1.0.0, incrementar ambas versiones en cada publicación; ejemplos: 0.1.0.1, 0.1.1.0, 0.2.0.0. No publicar las compilaciones antiguas como releases estables.
 

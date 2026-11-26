@@ -33,9 +33,9 @@ internal fun productAccent(type:ProductType):Color=when(type){ProductType.VEGETA
     Row(Modifier.fillMaxWidth().background(if(selecting&&checked)MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).combinedClickable(enabled=canWrite,onClick={if(selecting)select()else edit()},onLongClick=select).padding(end=4.dp),verticalAlignment=Alignment.CenterVertically){
         if(selecting||buy!=null)Checkbox(checked=selecting&&checked,onCheckedChange={if(selecting)select()else if(it)buy?.invoke()},enabled=canWrite)
         else Spacer(Modifier.width(12.dp))
-        Box(Modifier.size(40.dp).background(soft(productAccent(productType(product.name)),.18f),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){ProductGlyph(product.name,Modifier.size(25.dp))};Spacer(Modifier.width(10.dp))
+        ProductGlyph(product.name,Modifier.size(34.dp),product.icon);Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f).padding(vertical=12.dp)){
-            Text(product.name,style=MaterialTheme.typography.bodyLarge)
+            Text(product.name,style=MaterialTheme.typography.bodyLarge,maxLines=3,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             if(detail.isNotBlank())Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if(product.referenceUrl.isNotBlank()&&!selecting)IconButton(onClick={openShoppingReference(ctx,product.referenceUrl)}){Icon(Icons.Default.OpenInNew,"Abrir referencia de supermercado",Modifier.size(18.dp))}
@@ -58,4 +58,25 @@ internal fun productAccent(type:ProductType):Color=when(type){ProductType.VEGETA
             IconButton(enabled=count>0,onClick=remove){Icon(Icons.Default.DeleteOutline,"Eliminar seleccionados",tint=MaterialTheme.colorScheme.error)}
         }
     }
+}
+
+internal fun matchesShopping(name:String,query:String?):Boolean =
+    query.isNullOrBlank()||InventoryConsumption.fold(name).contains(InventoryConsumption.fold(query.trim()))
+
+@Composable internal fun ShoppingSearch(query:String,change:(String)->Unit,close:()->Unit){
+    OutlinedTextField(query,{change(it.take(180))},Modifier.fillMaxWidth(),singleLine=true,label={Text("Buscar productos")},
+        leadingIcon={Icon(Icons.Default.Search,null)},
+        trailingIcon={IconButton(onClick=close){Icon(Icons.Default.Close,"Cerrar búsqueda")}})
+}
+
+@Composable internal fun ShoppingPaste(listId:String,close:()->Unit,save:(List<Shopping>)->Unit){
+    var text by remember(listId){mutableStateOf("")}
+    val entries=remember(text,listId){ShoppingText.parse(text,listId)}
+    AlertDialog(onDismissRequest=close,title={Text("Añadir varios productos")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+            OutlinedTextField(text,{text=it.take(6000)},Modifier.fillMaxWidth(),label={Text("Un producto por línea")},minLines=3,maxLines=6)
+            if(entries.isNotEmpty())Text("${entries.size} productos",style=MaterialTheme.typography.bodySmall)
+        }
+    },confirmButton={Button(enabled=entries.isNotEmpty(),onClick={save(entries)}){Text("Añadir")}},
+        dismissButton={TextButton(onClick=close){Text("Cancelar")}})
 }

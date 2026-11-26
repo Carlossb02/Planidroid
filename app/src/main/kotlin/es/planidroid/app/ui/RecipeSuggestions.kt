@@ -17,6 +17,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import es.planidroid.app.domain.*
@@ -67,10 +69,14 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
     var editor by remember{mutableStateOf<SavedRecipe?>(null)};var remove by remember{mutableStateOf<SavedRecipe?>(null)}
     var scan by remember{mutableStateOf(false)};var imported by remember{mutableStateOf(emptyList<SavedRecipe>())}
     var picking by remember{mutableStateOf(false)}
+    var servings by remember{mutableIntStateOf(0)}
+    var checkedSteps by remember{mutableStateOf(emptySet<Int>())}
+    var cooking by remember{mutableStateOf(false)}
     var showGemini by remember(dishName){mutableStateOf(false)}
     var requested by remember{mutableStateOf("")}
     fun choose(recipe:SavedRecipe){
         current=recipe;picking=false;selected=recipe.ingredients.indices.toSet()
+        servings=recipe.servings;checkedSteps=emptySet();cooking=false
         amounts=recipe.ingredients.mapIndexed{i,v->i to if(v.amount>0)amountText(v.amount)else ""}.toMap()
         units=recipe.ingredients.mapIndexed{i,v->i to v.unit}.toMap();error=""
     }
@@ -104,14 +110,14 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
     val matching=if(dishName.isBlank())emptyList()else RecipeBook.matches(dishName,library.recipes)
     val shown=library.recipes.filter{search.isBlank()||InventoryConsumption.fold(it.title).contains(InventoryConsumption.fold(search))}.sortedByDescending{it.updatedAt}
     val valid=selected.all{i->amounts[i].isNullOrBlank()||amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
                     IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.Default.ArrowBack,"Volver")}
-                    Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else recipe.title,style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(recipe.servings>0)"Para "+recipe.servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
+                    Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else recipe.title,style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(servings>0)"Para "+servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
                     if(recipe!=null)IconButton(enabled=!busy,onClick={editor=recipe}){Icon(Icons.Default.Edit,"Editar receta")}
-                    else IconButton(enabled=!busy,onClick={scan=true}){Icon(Icons.Default.CameraAlt,"Escanear recetario")}
+
                 }
                 HorizontalDivider()
                 Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
@@ -126,7 +132,7 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                             Text("Ya tienes estas recetas",style=MaterialTheme.typography.titleMedium)
                             matching.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
                         }
-                        Row(verticalAlignment=Alignment.CenterVertically){Text("Recetario",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);FilledTonalIconButton(enabled=!busy,onClick={editor=SavedRecipe()}){Icon(Icons.Default.Add,"Crear receta")}}
+                        Row(verticalAlignment=Alignment.CenterVertically){Text("Recetario",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)}
                         if(library.recipes.isNotEmpty())OutlinedTextField(search,{search=it.take(180)},Modifier.fillMaxWidth(),placeholder={Text("Buscar receta")},singleLine=true,leadingIcon={Icon(Icons.Default.Search,null)},shape=RoundedCornerShape(16.dp))
                         if(shown.isEmpty())Text(if(library.recipes.isEmpty())"Guarda tus recetas o escanea una foto." else "No hay recetas que coincidan.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         shown.filter{r->matching.none{it.id==r.id}}.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
@@ -135,20 +141,39 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                             imported.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{imported=imported.filterNot{it.id==r.id}})}
                         }
                     }else if(!picking){
-                        Text("Ingredientes",style=MaterialTheme.typography.titleLarge)
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                            if(recipe.servings>0&&!cooking){
+                                IconButton(enabled=servings>1&&!busy,onClick={servings--}){Icon(Icons.Default.Remove,"Reducir raciones")}
+                                Text(servings.toString(),style=MaterialTheme.typography.labelLarge)
+                                IconButton(enabled=servings<100&&!busy,onClick={servings++}){Icon(Icons.Default.Add,"Aumentar raciones")}
+                            }
+                        }
                         recipe.ingredients.forEach { ingredient ->
                             Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
                                 Text(ingredient.name,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
-                                val amount=listOfNotNull(ingredient.amount.takeIf{it>0}?.let(::amountText),ingredient.unit.takeIf{it.isNotBlank()}).joinToString(" ")
+                                val amount=listOfNotNull(RecipeBook.scaleAmount(ingredient.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText),ingredient.unit.takeIf{it.isNotBlank()}).joinToString(" ")
                                 if(amount.isNotBlank())Text(amount,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
                         }
-                        Text("Preparación",Modifier.padding(top=12.dp),style=MaterialTheme.typography.titleLarge)
+                        Row(Modifier.padding(top=12.dp),verticalAlignment=Alignment.CenterVertically){
+                            Text("Preparación",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                            if(recipe.steps.isNotEmpty())TextButton(onClick={cooking=!cooking}){Text(if(cooking)"Salir" else "Cocinar")}
+                        }
+                        if(cooking&&recipe.steps.isNotEmpty()){
+                            val progress by androidx.compose.animation.core.animateFloatAsState(
+                                checkedSteps.size.toFloat()/recipe.steps.size,label="Progreso de receta")
+                            LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
+                            Text(checkedSteps.size.toString()+" de "+recipe.steps.size+" pasos",style=MaterialTheme.typography.labelMedium)
+                        }
                         if(recipe.steps.isEmpty())Text("No hay pasos guardados.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                         recipe.steps.forEachIndexed { index, step ->
                             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                                Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer){
+                                if(cooking)Checkbox(index in checkedSteps,{checked->
+                                    checkedSteps=if(checked)checkedSteps+index else checkedSteps-index
+                                },modifier=Modifier.semantics{contentDescription="Completado, paso "+(index+1)})
+                                else Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer){
                                     Text((index+1).toString(),Modifier.padding(horizontal=10.dp,vertical=5.dp),
                                         color=MaterialTheme.colorScheme.onSecondaryContainer,style=MaterialTheme.typography.labelLarge)
                                 }
@@ -174,7 +199,12 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                         if(recipe==null){
                             OutlinedButton(enabled=!busy,onClick={editor=SavedRecipe()},modifier=Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" Crear")}
                             FilledTonalButton(enabled=!busy,onClick={scan=true},modifier=Modifier.weight(1f)){Icon(Icons.Default.CameraAlt,null);Text(" Escanear")}
-                        }else if(!picking)Button(enabled=!busy,onClick={picking=true},modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
+                        }else if(!picking)Button(enabled=!busy,onClick={
+                            amounts=recipe.ingredients.mapIndexed{i,item->
+                                i to RecipeBook.scaleAmount(item.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText).orEmpty()
+                            }.toMap()
+                            picking=true
+                        },modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
                         else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
                             val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name))}
                             add(products);close()
@@ -215,9 +245,9 @@ private data class IngredientForm(val id:String=newId(),val name:String="",val q
     fun update(row:IngredientForm){items=items.map{if(it.id==row.id)row else it}}
     val count=servings.ifBlank{"0"}.toIntOrNull()
     val valid=title.isNotBlank()&&count!=null&&count in 0..100&&items.any{it.name.isNotBlank()}&&items.all{it.name.isBlank()||it.quantity.isBlank()||it.quantity.replace(',','.').toDoubleOrNull()?.let{n->n.isFinite()&&n>0&&n<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+    Dialog(onDismissRequest={if(!busy)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
                 Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){IconButton(enabled=!busy,onClick=close){Icon(Icons.Default.Close,"Cerrar")};Text(if(initial.title.isBlank())"Nueva receta"else "Editar receta",style=MaterialTheme.typography.titleLarge)}
                 HorizontalDivider()
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){

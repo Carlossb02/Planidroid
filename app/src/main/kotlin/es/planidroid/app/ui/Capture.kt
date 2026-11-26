@@ -34,6 +34,15 @@ import kotlinx.coroutines.launch
     var consent by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var connect by remember{mutableStateOf(false)}
+    fun localDraft(afterError:Boolean=false){
+        val parsed=CaptureParser.parse(input.trim())
+        if(parsed.isEmpty())return
+        draft=parsed
+        questions=emptyList()
+        answers=emptyMap()
+        assumptions=if(afterError)listOf("Gemini no respondió. Revisa la propuesta creada en el dispositivo.") else emptyList()
+        error=""
+    }
     fun interpret(followUp:Boolean=false) {
         val request=input.trim()
         if(request.isBlank()||busy)return
@@ -47,7 +56,9 @@ import kotlinx.coroutines.launch
                 draft=tasks.map { t -> t.copy(id=newId(),planHints=PlanningPreferences.merge(t.planHints,SmartCapture.hints(if(tasks.size==1&&!followUp)request else t.description,t.due,java.time.LocalDate.now()),if(tasks.size==1&&!followUp)request else t.description)) }
                 questions=if(followUp)emptyList()else CaptureClarifications.questions(proposal.copy(tasks=draft.orEmpty()));answers=emptyMap();assumptions=proposal.assumptions.take(2)
             } catch(e:CancellationException) { throw e }
-            catch(e:Exception) { error=e.localizedMessage?:"No se pudo usar Gemini." }
+            catch(e:Exception) {
+                if(followUp)error=e.localizedMessage?:"No se pudo usar Gemini." else localDraft(afterError=true)
+            }
             finally { busy=false }
         }
     }
@@ -56,14 +67,13 @@ import kotlinx.coroutines.launch
         run {
             Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 if(!review) {
-                    Surface(shape=RoundedCornerShape(24.dp),color=soft(Lilac,.15f)) { Icon(Icons.Default.AutoAwesome,null,Modifier.padding(15.dp).size(30.dp),tint=Lilac) }
-                    Section("¿Qué tienes en mente?","Escribe lo que necesitas hacer. Planidroid lo organizará por ti.")
+                    Section("¿Qué tienes en mente?","Escribe una tarea por línea.")
                     OutlinedTextField(input,{input=it.take(16000)},Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(24.dp),minLines=5,enabled=!busy)
-                    TextButton(onClick={manual(if(input.isBlank())Task(title="")else CaptureParser.parse(input.trim().replace(Regex("\\s*\\n\\s*")," ")).firstOrNull()?.let{it.copy(description=input.trim())}?:Task(title=input.trim().take(180)))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Edit,null);Spacer(Modifier.width(8.dp));Text("Editar manualmente")}
-                    Button(onClick={if(!AiConfig.configured(context,uid))connect=true else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar") }
+                    if(input.isNotBlank())TextButton(onClick={localDraft()},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Interpretar sin Gemini")}
+                    else TextButton(onClick={manual(if(input.isBlank())Task(title="")else CaptureParser.parse(input.trim().replace(Regex("\\s*\\n\\s*")," ")).firstOrNull()?.let{it.copy(description=input.trim())}?:Task(title=input.trim().take(180)))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Edit,null);Spacer(Modifier.width(8.dp));Text("Editar manualmente")}
+                    Button(onClick={if(!AiConfig.configured(context,uid))connect=true else consent=true},enabled=input.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(18.dp)) { Icon(Icons.Default.AutoAwesome,null); Spacer(Modifier.width(10.dp)); Text(if(busy)"Organizando…" else "Organizar con Gemini") }
                     if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-                    Text("Puedes escribir una tarea o varias, una por línea. No se guarda nada sin tu confirmación.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Section("Tu propuesta","Revisa y ajusta lo necesario.")
                     if(questions.isNotEmpty())GlassCard(tint=Lilac){
