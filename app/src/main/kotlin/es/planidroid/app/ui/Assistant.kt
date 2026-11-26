@@ -111,7 +111,7 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
             style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         ActionFlow {
             FilterChip(includeAgenda,{includeAgenda=!includeAgenda},enabled=!busy,label={Text("Incluir agenda")})
-            if(turns.isNotEmpty())TextButton(enabled=!busy,onClick={turns=emptyList();error=""}){Text("Nueva conversación")}
+            if(turns.isNotEmpty())TextButton(enabled=!busy,onClick={turns=emptyList();error="";includeAgenda=false}){Text("Nueva conversación")}
             Button(enabled=!busy&&input.isNotBlank(),onClick=::ask){Text(if(error.isBlank())"Enviar" else "Reintentar")}
         }
         Spacer(Modifier.height(4.dp))
@@ -138,7 +138,7 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
     }
 }
 
-@Composable private fun ReviewAssistantTasks(
+@Composable internal fun ReviewAssistantTasks(
     entries:List<Task>,close:()->Unit,save:(List<Task>,(String?)->Unit)->Unit
 ){
     var selected by remember(entries){mutableStateOf(entries.map{it.id}.toSet())}
@@ -164,6 +164,10 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
                 if(expanded==task.id){
                     Field(task.title,{value->drafts=drafts.map{if(it.id==task.id)it.copy(title=value.take(180))else it}},"Título")
                     DateField(task.due,{value->drafts=drafts.map{if(it.id==task.id)it.copy(due=value,category=if(value.isBlank())Category.INBOX else Category.DEADLINE)else it}},"Fecha límite")
+                    Field(task.minutes.takeIf{it>0}?.toString().orEmpty(),{value->
+                        val minutes=value.ifBlank{"0"}.toIntOrNull()?.takeIf{it in 0..100000}
+                        if(minutes!=null)drafts=drafts.map{if(it.id==task.id)it.copy(minutes=minutes)else it}
+                    },"Duración (min)")
                 }
             }
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
@@ -174,37 +178,56 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
     }){Text("Guardar")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})
 }
 
-@Composable private fun ReviewAssistantShopping(
+@Composable internal fun ReviewAssistantShopping(
     entries:List<Shopping>,lists:List<ShoppingList>,close:()->Unit,
     save:(List<Shopping>,ShoppingList,Boolean,(String?)->Unit)->Unit
 ){
     var selected by remember(entries){mutableStateOf(entries.map{it.id}.toSet())}
+    var drafts by remember(entries){mutableStateOf(entries)}
+    var amounts by remember(entries){mutableStateOf(entries.associate{it.id to if(it.quantitySpecified)amountText(it.quantity)else ""})}
+    var expanded by remember(entries){mutableStateOf<String?>(null)}
     var target by remember(entries){mutableStateOf(lists.firstOrNull()?.id.orEmpty())}
     var name by remember(entries){mutableStateOf("Compra")}
     var busy by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
     val existing=lists.find{it.id==target}
-    val valid=selected.isNotEmpty()&&(if(target.isBlank())name.isNotBlank() else existing!=null)
+    fun amount(id:String)=amounts[id].orEmpty().trim().replace(',','.').toDoubleOrNull()
+    val outgoing=drafts.filter{it.id in selected}
+    val valid=outgoing.isNotEmpty()&&(if(target.isBlank())name.isNotBlank()else existing!=null)&&outgoing.all{
+        val number=amount(it.id)
+        it.name.isNotBlank()&&(amounts[it.id].isNullOrBlank()||(number!=null&&number.isFinite()&&number>0&&number<=100000))
+    }
     AlertDialog(onDismissRequest={if(!busy)close()},title={Text("Añadir a la compra")},text={
         Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
             if(lists.isNotEmpty())Choice("Lista personal",lists.map{it.id}+listOf(""),target,
                 {id->lists.find{it.id==id}?.name?:"Nueva lista"}){if(!busy)target=it}
             if(target.isBlank())Field(name,{name=it.take(180)},"Nombre de la nueva lista")
-            entries.forEach{item->
+            drafts.forEach{item->
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Checkbox(item.id in selected,{selected=if(it)selected+item.id else selected-item.id},enabled=!busy)
                     ProductGlyph(item.name,Modifier.size(30.dp),item.icon)
                     Column(Modifier.weight(1f).padding(start=8.dp)){
-                        Text(item.name,style=MaterialTheme.typography.titleSmall)
-                        if(item.quantitySpecified)Text((amountText(item.quantity)+" "+item.unit).trim(),style=MaterialTheme.typography.bodySmall)
+                        Text(item.name.ifBlank{"Producto sin nombre"},style=MaterialTheme.typography.titleSmall)
+                        if(!amounts[item.id].isNullOrBlank())Text((amounts[item.id].orEmpty()+" "+item.unit).trim(),style=MaterialTheme.typography.bodySmall)
                     }
+                    TextButton(onClick={expanded=if(expanded==item.id)null else item.id},enabled=!busy){Text("Editar")}
+                }
+                if(expanded==item.id){
+                    Field(item.name,{value->drafts=drafts.map{if(it.id==item.id)it.copy(name=value.take(180),icon=guessIcon(value))else it}},"Nombre del producto")
+                    Field(amounts[item.id].orEmpty(),{value->amounts=amounts+(item.id to value.take(18))},"Cantidad")
+                    UnitSelector(item.unit,{value->drafts=drafts.map{if(it.id==item.id)it.copy(unit=value)else it}})
                 }
             }
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         }
     },confirmButton={Button(enabled=valid&&!busy,onClick={
         busy=true;error=""
-        save(entries.filter{it.id in selected},existing?:ShoppingList(name=name.trim()),existing==null){
+        val products=outgoing.map{item->
+            val value=amount(item.id)
+            item.copy(name=item.name.trim(),quantity=value?:1.0,quantitySpecified=value!=null,
+                unit=if(value!=null)item.unit else "")
+        }
+        save(products,existing?:ShoppingList(name=name.trim()),existing==null){
             busy=false;error=it.orEmpty()
         }
     }){Text("Añadir")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})

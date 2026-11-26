@@ -15,7 +15,11 @@ import org.json.JSONArray
 import java.time.LocalDate
 
 /** BYOK: send key only in HTTPS header to the fixed official Google endpoint. Never log provider bodies. */
-class GeminiGateway(private val apiKey:suspend ()->String,private val status:(Boolean)->Unit={}):AiProvider {
+class GeminiGateway internal constructor(
+    private val apiKey:suspend ()->String,
+    private val status:(Boolean)->Unit={},
+    private val connect:(URL)->HttpsURLConnection={it.openConnection() as HttpsURLConnection}
+):AiProvider {
     private companion object Recovery {
         const val MODEL="gemini-3.5-flash-lite"
         const val ALTERNATE="gemini-3.8-flash"
@@ -94,7 +98,7 @@ class GeminiGateway(private val apiKey:suspend ()->String,private val status:(Bo
     }
 
     private suspend fun generate(key:String,model:String,request:JSONObject):JSONObject=withContext(Dispatchers.IO){
-        val connection=URL("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent").openConnection() as HttpsURLConnection
+        val connection=connect(URL("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent"))
         try {
             connection.instanceFollowRedirects=false
             connection.requestMethod="POST"

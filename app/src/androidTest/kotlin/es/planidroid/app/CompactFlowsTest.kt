@@ -9,10 +9,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import es.planidroid.app.domain.Shopping
+import es.planidroid.app.domain.ShoppingList
 import es.planidroid.app.domain.Zone
 import es.planidroid.app.ui.ActionFlow
 import es.planidroid.app.ui.FurnitureMap
 import es.planidroid.app.ui.PlanidroidTheme
+import es.planidroid.app.ui.ReviewAssistantShopping
 import es.planidroid.app.ui.ShoppingPaste
 import org.junit.Assert.*
 import org.junit.Rule
@@ -68,5 +70,30 @@ class CompactFlowsTest {
         compose.onNodeWithText("Puerta").performClick()
         compose.onNodeWithText("Botellas").assertIsDisplayed().performClick()
         compose.runOnIdle{assertEquals("Botellas",selected)}
+    }
+
+    @Test fun assistantShoppingCanBeCorrectedBeforeApplyingTheProposal() {
+        var selectedList:String?=null
+        var saved:List<Shopping>?=null
+        val entries=listOf(Shopping(name="Arroz",quantity=2.0,unit="kg"))
+        val lists=listOf(ShoppingList(id="personal",name="Despensa"))
+        compose.setContent {
+            PlanidroidTheme("Claro",false) {
+                ReviewAssistantShopping(entries,lists,{}){products,list,create,done->
+                    assertFalse(create)
+                    saved=products
+                    selectedList=list.id
+                    done(null)
+                }
+            }
+        }
+        compose.onNodeWithText("Editar",substring=false).performClick()
+        compose.onNodeWithText("Cantidad",substring=false).performScrollTo().performTextReplacement("1,5")
+        compose.runOnIdle { assertNull(saved) }
+        compose.onNodeWithText("Añadir",substring=false).performClick()
+        compose.runOnIdle {
+            assertEquals("personal",selectedList)
+            assertEquals(1.5,saved!!.single().quantity,0.001)
+        }
     }
 }
