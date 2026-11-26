@@ -25,30 +25,36 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private data class AgendaEvent(val id:String,val start:Long,val end:Long,val title:String,val session:Session?=null,val task:Task?=null,val external:ExternalEvent?=null)
+private data class AgendaEvent(val id:String,val start:Long,val end:Long,val title:String,val session:Session,val task:Task?)
 private val spanish=Locale("es","ES")
 private fun dayLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("EEE d MMM",spanish)).replaceFirstChar{it.uppercase()}
 private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MMMM yyyy",spanish)).replaceFirstChar{it.uppercase()}
 
-@Composable fun CalendarScreen(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,save:(Session)->Unit,delete:(Session)->Unit,plan:()->Unit,external:List<ExternalEvent> = emptyList(),addEvent:(LocalDate)->Unit = {}){
+internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):Boolean =
+    session.calendarTitle.isNotBlank() && session.end>session.start &&
+        listOf(session.start,session.end).all{Instant.ofEpochMilli(it).atZone(zone).toLocalTime()==LocalTime.MIDNIGHT}
+
+@Composable fun CalendarScreen(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,save:(Session)->Unit,delete:(Session)->Unit,plan:()->Unit,addEvent:(LocalDate)->Unit={},importFile:()->Unit={},editEvent:(Session,Task)->Unit={_,_->},focusDay:String?=null,consumeFocus:()->Unit={}){
     var dateText by rememberSaveable{mutableStateOf(LocalDate.now().toString())}
     val date=LocalDate.parse(dateText)
     val initialView=LocalViewPreferences.current.calendar
     var mode by rememberSaveable(initialView){mutableStateOf(initialView)}
+    LaunchedEffect(focusDay){if(focusDay!=null){dateText=focusDay;mode="Día";consumeFocus()}}
     var selectedId by rememberSaveable{mutableStateOf<String?>(null)}
-    var selectedExternal by remember{mutableStateOf<ExternalEvent?>(null)}
     val selected=sessions.find{it.id==selectedId}
     val taskMap=remember(tasks){tasks.associateBy{it.id}}
-    val events=remember(sessions,tasks,external){
-        val local=sessions.filter{it.end>it.start&&taskMap.containsKey(it.taskId)}.map{s->val t=taskMap[s.taskId];AgendaEvent("s:"+s.id,s.start,s.end,if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title.orEmpty()},s,t)}
-        local+external.filter{it.end>it.start}.map{AgendaEvent("e:"+it.id,it.start,it.end,it.title,external=it)}
+    val events=remember(sessions,tasks){
+        sessions.filter{it.end>it.start&&taskMap.containsKey(it.taskId)}.map{s->val t=taskMap[s.taskId];AgendaEvent("s:"+s.id,s.start,s.end,if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title.orEmpty()},s,t)}
     }
     val week=date.minusDays((date.dayOfWeek.value-1).toLong())
     val zone=ZoneId.systemDefault()
     val days=if(mode=="Semana")(0L..6L).map{week.plusDays(it)}else listOf(date)
-    fun choose(d:LocalDate){dateText=d.toString();mode="Día";selectedId=null;selectedExternal=null}
+    fun choose(d:LocalDate){dateText=d.toString();mode="Día";selectedId=null}
     fun navigate(delta:Long){dateText=when(mode){"Semana"->date.plusWeeks(delta);"Mes"->date.plusMonths(delta);else->date.plusDays(delta)}.toString();selectedId=null}
-    fun open(event:AgendaEvent){if(event.session!=null)selectedId=event.session.id else selectedExternal=event.external}
+    fun open(event:AgendaEvent){
+        val task=event.task
+        if(event.session.calendarTitle.isNotBlank()&&task!=null)editEvent(event.session,task) else selectedId=event.session.id
+    }
     Column(Modifier.fillMaxSize().padding(horizontal=12.dp)){
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
             Text(monthLabel(date),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
@@ -56,14 +62,16 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
             IconButton(onClick={navigate(1)}){Icon(Icons.Default.ChevronRight,"Siguiente")}
             TextButton(onClick={dateText=LocalDate.now().toString()}){Text("Hoy")}
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.CenterVertically){
-            listOf("Día","Semana","Mes","Agenda").forEach{v->FilterChip(selected=mode==v,onClick={mode=v},label={Text(v)},modifier=Modifier.weight(1f))}
+        ActionFlow {
+            listOf("Día","Semana","Mes","Agenda").forEach{v->FilterChip(selected=mode==v,onClick={mode=v},label={Text(v)})}
         }
-        Row(Modifier.fillMaxWidth().padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            OutlinedButton(onClick={addEvent(date)},modifier=Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" Evento")}
-            FilledTonalButton(onClick=plan,modifier=Modifier.weight(1f)){Icon(Icons.Default.AutoAwesome,null);Text(" Planificar")}
+        ActionFlow {
+            OutlinedButton(onClick={addEvent(date)}){Text("Nuevo evento")}
+            FilledTonalButton(onClick=plan){Text("Planificar")}
+            IconButton(onClick=importFile){Icon(Icons.Default.FileOpen,"Importar archivo de calendario")}
         }
-        val due=tasks.filter{it.due==date.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+        val eventAnchors=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
+        val due=tasks.filter{it.id !in eventAnchors&&it.due==date.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
         if(due.isNotEmpty()){var openDue by remember(date){mutableStateOf(false)};TextButton(onClick={openDue=true}){Text(due.size.toString()+" vencimientos · "+dayLabel(date))};if(openDue)AlertDialog(onDismissRequest={openDue=false},title={Text("Vencimientos")},text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){due.forEach{t->TextButton(onClick={openDue=false;edit(t)}){Text(t.title)}}}},confirmButton={TextButton(onClick={openDue=false}){Text("Cerrar")}})}
         when(mode){
             "Mes"->Column(Modifier.weight(1f).verticalScroll(rememberScrollState())){
@@ -76,11 +84,11 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
                             if(n in 1..date.lengthOfMonth()){
                                 val d=first.withDayOfMonth(n);val bounds=TimelineLayout.bounds(d,zone)
                                 val visible=events.filter{it.start<bounds.end&&it.end>bounds.start}
-                                val deadline=tasks.any{it.due==d.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+                                val deadline=tasks.any{it.id !in eventAnchors&&it.due==d.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
                                 Surface(Modifier.fillMaxSize().clickable{choose(d)},shape=RoundedCornerShape(10.dp),color=if(d==date)soft(Blue,.20f)else MaterialTheme.colorScheme.surface){
                                     Column(Modifier.padding(5.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
                                         Text(n.toString()+(if(deadline)" •" else ""),style=MaterialTheme.typography.labelLarge)
-                                        visible.take(3).forEach{e->Box(Modifier.fillMaxWidth().height(5.dp).background(if(e.session?.isBreak==true)MaterialTheme.colorScheme.outline else if(e.external!=null)Lilac else taskColor(e.task),RoundedCornerShape(3.dp)))}
+                                        visible.take(3).forEach{e->Box(Modifier.fillMaxWidth().height(5.dp).background(if(e.session.isBreak==true)MaterialTheme.colorScheme.outline else if(e.session.calendarTitle.isNotBlank())Lilac else taskColor(e.task),RoundedCornerShape(3.dp)))}
                                         if(visible.size>3)Text("+"+(visible.size-3),style=MaterialTheme.typography.labelSmall)
                                     }
                                 }
@@ -98,19 +106,30 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
                     item{Text(dayLabel(day),style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(top=8.dp))}
                     items(group,key={it.id}){e->
                         Surface(Modifier.fillMaxWidth().clickable{open(e)},shape=RoundedCornerShape(14.dp),color=eventBackground(e)){
-                            Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){Text(time(e.start),Modifier.width(55.dp));Column(Modifier.weight(1f)){Text(e.title,style=MaterialTheme.typography.titleMedium);Text(time(e.start)+" – "+time(e.end),style=MaterialTheme.typography.bodySmall)}}
+                            Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){Text(if(isAllDayEvent(e.session))"Día" else time(e.start),Modifier.width(55.dp));Column(Modifier.weight(1f)){Text(e.title,style=MaterialTheme.typography.titleMedium);Text(if(isAllDayEvent(e.session))"Todo el día" else time(e.start)+" – "+time(e.end),style=MaterialTheme.typography.bodySmall)}}
                         }
                     }
                 }
             }
-            else->TimeGrid(days,date,events,Modifier.weight(1f),::choose,::open)
+            else->{
+                val allDay=events.filter{isAllDayEvent(it.session)&&days.any{day->
+                    val bounds=TimelineLayout.bounds(day,zone)
+                    it.start<bounds.end&&it.end>bounds.start
+                }}
+                if(allDay.isNotEmpty())Box(Modifier.fillMaxWidth().heightIn(max=100.dp).verticalScroll(rememberScrollState())){
+                    ActionFlow {
+                        allDay.forEach{event->AssistChip(onClick={open(event)},label={Text(event.title,maxLines=1,overflow=TextOverflow.Ellipsis)},
+                            leadingIcon={Icon(Icons.Default.Today,null,Modifier.size(16.dp))})}
+                    }
+                }
+                TimeGrid(days,date,events.filterNot{isAllDayEvent(it.session)},Modifier.weight(1f),::choose,::open)
+            }
         }
     }
-    selected?.let{s->SessionDetails(s,taskMap[s.taskId],sessions,tasks,external,{selectedId=null},{v->save(v);selectedId=null},{delete(s);selectedId=null},{t->selectedId=null;edit(t)})}
-    selectedExternal?.let{e->AlertDialog(onDismissRequest={selectedExternal=null},title={Text(e.title)},text={Text(dayLabel(sessionDate(e.start))+" · "+time(e.start)+" – "+time(e.end)+"\nGoogle Calendar · solo lectura")},confirmButton={TextButton(onClick={selectedExternal=null}){Text("Cerrar")}})}
+    selected?.let{s->SessionDetails(s,taskMap[s.taskId],sessions,tasks,{selectedId=null},{v->save(v);selectedId=null},{delete(s);selectedId=null},{t->selectedId=null;edit(t)})}
 }
-@Composable private fun eventBackground(e:AgendaEvent)=if(e.session?.isBreak==true)MaterialTheme.colorScheme.surfaceVariant else soft(if(e.external!=null)Lilac else taskColor(e.task),if(e.session?.done==true).13f else .34f)
-@Composable private fun eventAccent(e:AgendaEvent)=if(e.session?.isBreak==true)MaterialTheme.colorScheme.outline else if(e.external!=null)Lilac else taskColor(e.task)
+@Composable private fun eventBackground(e:AgendaEvent)=if(e.session.isBreak==true)MaterialTheme.colorScheme.surfaceVariant else soft(if(e.session.calendarTitle.isNotBlank())Lilac else taskColor(e.task),if(e.session.done==true).13f else .34f)
+@Composable private fun eventAccent(e:AgendaEvent)=if(e.session.isBreak==true)MaterialTheme.colorScheme.outline else if(e.session.calendarTitle.isNotBlank())Lilac else taskColor(e.task)
 
 @Composable private fun TimeGrid(days:List<LocalDate>,selected:LocalDate,events:List<AgendaEvent>,modifier:Modifier,choose:(LocalDate)->Unit,open:(AgendaEvent)->Unit){
     val zone=ZoneId.systemDefault();val hourHeight=if(days.size==1)96.dp else 78.dp
@@ -164,7 +183,7 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
                     Column(Modifier.weight(1f).padding(horizontal=4.dp,vertical=if(height>=28.dp)4.dp else 0.dp)){
                         Text(e.title,maxLines=if(height>=70.dp)2 else 1,overflow=TextOverflow.Ellipsis,fontSize=if(height<22.dp)9.sp else 12.sp,lineHeight=if(height<22.dp)10.sp else 14.sp)
                         if(height>=40.dp)Text(time(p.start)+"–"+time(p.end),fontSize=10.sp,maxLines=1)
-                        if(height>=80.dp)e.task?.phases?.find{it.id==e.session?.phaseId}?.let{Text(it.title,fontSize=10.sp,maxLines=2,overflow=TextOverflow.Ellipsis)}
+                        if(height>=80.dp)e.task?.phases?.find{it.id==e.session.phaseId}?.let{Text(it.title,fontSize=10.sp,maxLines=2,overflow=TextOverflow.Ellipsis)}
                     }
                 }
             }
@@ -172,7 +191,7 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
         if(day==LocalDate.now()){val elapsed=System.currentTimeMillis()-bounds.start;if(elapsed in 0 until (bounds.end-bounds.start))Box(Modifier.offset(y=hourHeight*(elapsed/3600000f)).fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.error))}
     }
 }
-@Composable private fun SessionDetails(s:Session,task:Task?,sessions:List<Session>,tasks:List<Task>,external:List<ExternalEvent>,close:()->Unit,save:(Session)->Unit,delete:()->Unit,edit:(Task)->Unit){
+@Composable private fun SessionDetails(s:Session,task:Task?,sessions:List<Session>,tasks:List<Task>,close:()->Unit,save:(Session)->Unit,delete:()->Unit,edit:(Task)->Unit){
     var date by remember(s.id){mutableStateOf(sessionDate(s.start).toString())}
     var startText by remember(s.id){mutableStateOf(time(s.start))}
     var duration by remember(s.id){mutableStateOf(((s.end-s.start)/60000).toString())}
@@ -189,7 +208,7 @@ private fun monthLabel(day:LocalDate)=day.format(DateTimeFormatter.ofPattern("MM
             val a=LocalDate.parse(date).atTime(LocalTime.parse(startText)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val n=duration.toInt();require(n in 1..1440){"Duración inválida"}
             val v=s.copy(start=a,end=a+n*60000L,done=done)
-            require(sessions.none{OverlapPolicy.conflict(v,it,tasks)}&&external.none{it.busy&&it.start<v.end&&it.end>v.start}){"Ese horario está ocupado"}
+            require(sessions.none{OverlapPolicy.conflict(v,it,tasks)}){"Ese horario está ocupado"}
             v
         }.onSuccess(save).onFailure{error=it.message?:"Datos inválidos"}
     }){Text("Guardar")}},dismissButton={TextButton(onClick=close){Text("Cerrar")}})

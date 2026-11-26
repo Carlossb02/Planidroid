@@ -29,14 +29,16 @@ import es.planidroid.app.domain.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 
-@Composable fun ShoppingScreen(shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,listId:String="",listName:String="Mi compra",back:()->Unit={},share:(()->Unit)?=null,removeList:(()->Unit)?=null){
+@Composable fun ShoppingScreen(shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,listId:String="",listName:String="Mi compra",back:()->Unit={},share:(()->Unit)?=null,removeList:(()->Unit)?=null,renameList:(()->Unit)?=null){
+    var paste by remember(listId){mutableStateOf(false)}
+    var search by remember(listId){mutableStateOf<String?>(null)}
     var scan by remember(listId){mutableStateOf(false)};var quick by remember(listId){mutableStateOf("")}
     var view by remember(listId){mutableStateOf("Lista")};var edit by remember{mutableStateOf<Shopping?>(null)};var undo by remember{mutableStateOf<Purchase?>(null)}
     var selectedIds by remember(listId){mutableStateOf(emptySet<String>())};var selecting by remember(listId){mutableStateOf(false)};var confirmDelete by remember{mutableStateOf(false)}
     var recipes by remember{mutableStateOf(false)};var shoppingAi by remember{mutableStateOf(false)};var menu by remember{mutableStateOf(false)}
     val uid by model.scope.collectAsStateWithLifecycle()
     val pending=shopping.filter{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0}
-    val shown=if(view=="Rutina")shopping.filter{it.routine}else pending
+    val shown=(if(view=="Rutina")shopping.filter{it.routine}else pending).filter{matchesShopping(it.name,search)}
     val visibleIds=shown.map{it.id}.toSet();val selected=selectedIds.intersect(visibleIds)
     fun select(id:String){selecting=true;selectedIds=if(id in selectedIds)selectedIds-id else selectedIds+id}
     fun clear(){selecting=false;selectedIds=emptySet()}
@@ -47,18 +49,22 @@ import java.time.format.DateTimeFormatter
             if(share!=null)IconButton(onClick=share){Icon(Icons.Default.Share,"Compartir")}
             Box{IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Acciones de lista")};DropdownMenu(menu,{menu=false}){
                 DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;edit=Shopping(name="",unit="",listId=listId,quantitySpecified=false)})
+                DropdownMenuItem(text={Text("Buscar productos")},onClick={menu=false;search=""})
+                DropdownMenuItem(text={Text("Pegar varios productos")},onClick={menu=false;paste=true})
+                if(renameList!=null)DropdownMenuItem(text={Text("Renombrar lista")},onClick={menu=false;renameList()})
                 if(removeList!=null)DropdownMenuItem(text={Text("Eliminar lista",color=MaterialTheme.colorScheme.error)},onClick={menu=false;removeList()})
                 if(view!="Historial")DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;selecting=true})
             }}
         }
-        if(!selecting&&view=="Lista")ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
-        if(!selecting&&view=="Lista")ShoppingAiActions({recipes=true},{shoppingAi=true})
+        search?.let{ShoppingSearch(it,{value->search=value},{search=null;clear()})}
+        if(search==null&&!selecting&&view=="Lista")ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
+        if(search==null&&!selecting&&view=="Lista")ShoppingAiActions({recipes=true},{shoppingAi=true})
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Lista","Rutina","Historial").forEach{v->FilterChip(view==v,{view=v;clear()},label={Text(v)})}}
         if(selecting)ShoppingSelection(selected.size,shown.size,{selectedIds=if(selected==visibleIds)emptySet()else visibleIds},::clear,{confirmDelete=true})
         LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
             if(view=="Historial"){
                 if(history.isEmpty())item{Text("Todavía no hay compras.",modifier=Modifier.padding(12.dp))}
-                history.sortedByDescending{it.boughtAt}.groupBy{sessionDate(it.boughtAt)}.forEach{(day,list)->
+                history.filter{matchesShopping(it.name,search)}.sortedByDescending{it.boughtAt}.groupBy{sessionDate(it.boughtAt)}.forEach{(day,list)->
                     item{Text(day.format(DateTimeFormatter.ofPattern("d MMMM yyyy",java.util.Locale("es","ES"))),style=MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=10.dp,bottom=4.dp))}
                     items(list,key={it.id}){p->
                         var actions by remember(p.id){mutableStateOf(false)}
@@ -69,7 +75,7 @@ import java.time.format.DateTimeFormatter
                     }
                 }
             }else{
-                if(shown.isEmpty())item{Text(if(view=="Rutina")"No hay compras habituales" else "Todo al día",modifier=Modifier.padding(12.dp),style=MaterialTheme.typography.titleMedium)}
+                if(shown.isEmpty())item{Text(if(!search.isNullOrBlank())"Sin coincidencias" else if(view=="Rutina")"No hay compras habituales" else "Todo al día",modifier=Modifier.padding(12.dp),style=MaterialTheme.typography.titleMedium)}
                 shown.groupBy{productType(it.name)}.toSortedMap(compareBy{productLabel(it)}).forEach{(type,products)->
                     item{Text(productLabel(type),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=12.dp,bottom=4.dp,start=4.dp))}
                     items(products.sortedBy{it.name.lowercase()},key={it.id}){p->
@@ -85,6 +91,7 @@ import java.time.format.DateTimeFormatter
     if(confirmDelete)Confirm("Eliminar "+selected.size+" productos","No se registrarán como compras; el historial anterior se conserva.",{confirmDelete=false},{model.deleteShopping(selected,listId);clear()})
     if(shoppingAi)ShoppingAssistant(uid,pending,listId,{shoppingAi=false},{model.saveShopping(it)})
     if(recipes)RecipeSuggestions(uid,pending,listId,{recipes=false},{model.saveShopping(it)})
+    if(paste)ShoppingPaste(listId,{paste=false},{model.saveShopping(it);paste=false})
     if(scan)ShoppingScan(listId,{scan=false},{model.saveShopping(it);scan=false})
     edit?.let{p->ShoppingEditor(p,inventory,{edit=null},{model.save(it);edit=null})}
     undo?.let{p->Confirm("Deshacer compra","Volverá a la lista y se revertirá el stock si no ha cambiado.",{undo=null},{model.repeatPurchase(p,true)})}
@@ -103,15 +110,33 @@ import java.time.format.DateTimeFormatter
     var ai by remember{mutableStateOf(false)}
     var consent by remember{mutableStateOf(false)}
     var connect by remember{mutableStateOf(false)}
+    suspend fun readLocally(uri:android.net.Uri):String {
+        val reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        try{
+            val image=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){InputImage.fromFilePath(ctx,uri)}
+            return reader.process(image).await().text.take(16000)
+        }finally{reader.close()}
+    }
     fun recognize(uri:android.net.Uri){
         busy=true;error=""
+        val useGemini=ai
         scope.launch{
-            val reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             try{
-                draft=if(ai){val bytes=shoppingPhotoBytes(ctx,uri);try{AiConfig.provider(ctx,uid).shoppingText("Transcribe esta lista de compra manuscrita.",bytes)}finally{bytes.fill(0)}}else {val image=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){InputImage.fromFilePath(ctx,uri)};reader.process(image).await().text.take(16000)}
-                if(draft.isBlank())error="No se ha detectado texto. Prueba con mejor luz o escribe los productos."
-            }catch(e:CancellationException){throw e}catch(_:Exception){error="No se pudo leer la imagen. Puedes usar reconocimiento sin IA o escribir los productos."}
-            finally{reader.close();busy=false;file?.delete();file=null;photoUri=null}
+                val suggested=if(useGemini)try{
+                    val bytes=shoppingPhotoBytes(ctx,uri)
+                    try{AiConfig.provider(ctx,uid).shoppingText("Transcribe esta lista de compra manuscrita.",bytes)}
+                    finally{bytes.fill(0)}
+                }catch(cancellation:CancellationException){throw cancellation}
+                catch(_:Exception){""}else ""
+                draft=suggested.ifBlank{readLocally(uri)}
+                error=when{
+                    draft.isBlank()->"No se ha detectado texto. Prueba con mejor luz o escribe los productos."
+                    useGemini&&suggested.isBlank()->"Se usó el reconocimiento del teléfono. Revisa la transcripción."
+                    else->""
+                }
+            }catch(cancellation:CancellationException){throw cancellation}
+            catch(_:Exception){error="No se pudo leer la imagen. Puedes escribir los productos."}
+            finally{busy=false;file?.delete();file=null;photoUri=null}
         }
     }
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->
@@ -124,7 +149,7 @@ import java.time.format.DateTimeFormatter
             Text("Haz una foto o elige una imagen. Revisa los productos antes de añadirlos.")
             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(ai,{v->if(!v)ai=false else if(!AiConfig.configured(ctx,uid))connect=true else consent=true},enabled=!busy);Text("Reconocer con Gemini (opcional)")}
             Text(if(ai)"La imagen se enviará directamente a Gemini." else "OCR en el teléfono · sin conexión",style=MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            ActionFlow {
                 Button(enabled=!busy,onClick={
                     runCatching{
                         val dir=java.io.File(ctx.filesDir,"captures").apply{mkdirs()}

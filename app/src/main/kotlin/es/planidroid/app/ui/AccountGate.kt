@@ -15,7 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable fun AccountGate(model:PlanidroidModel,uid:String,verified:Boolean?){
     val ctx=LocalContext.current;val busy by model.busy.collectAsStateWithLifecycle();val message by model.message.collectAsStateWithLifecycle()
-    Surface(Modifier.fillMaxSize()){Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(28.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){
+    Surface(Modifier.fillMaxSize()){WindowFrame{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){
         Surface(shape=RoundedCornerShape(28.dp),color=soft(Blue,.18f)){Icon(Icons.Default.Checklist,null,Modifier.padding(20.dp).size(48.dp),tint=MaterialTheme.colorScheme.primary)}
         Spacer(Modifier.height(14.dp))
         Text("Planidroid",style=MaterialTheme.typography.headlineLarge)
@@ -29,5 +29,5 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
         }
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(message.isNotBlank())Text(message,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
-    }}
+    }}}
 }

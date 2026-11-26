@@ -6,6 +6,12 @@ import kotlinx.serialization.Serializable
 @Serializable data class SavedRecipe(val id:String=newId(),val title:String="",val servings:Int=0,val ingredients:List<RecipeIngredient> = emptyList(),val steps:List<String> = emptyList(),val source:String="manual",val updatedAt:Long=System.currentTimeMillis())
 
 object RecipeBook {
+    fun scaleAmount(amount:Double,original:Int,servings:Int):Double {
+        if(amount<=0||original<=0||servings<=0||original==servings)return amount
+        return java.math.BigDecimal.valueOf(amount).multiply(java.math.BigDecimal.valueOf(servings.toLong()))
+            .divide(java.math.BigDecimal.valueOf(original.toLong()),4,java.math.RoundingMode.HALF_UP)
+            .toDouble().takeIf{it>0}?:amount*servings/original
+    }
     fun validate(r:SavedRecipe){
         require(r.title.isNotBlank()&&r.title.length<=180&&r.servings in 0..100&&r.ingredients.size in 1..60&&r.steps.size<=30&&r.steps.all{it.length<=2000})
         require(r.ingredients.all{it.name.isNotBlank()&&it.name.length<=180&&it.amount.isFinite()&&it.amount in 0.0..100000.0&&SpanishUnits.canonical(it.unit)!=null})

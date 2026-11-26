@@ -19,8 +19,50 @@ import es.planidroid.app.domain.*
 val Blue=Color(0xFF376DAB); val Mint=Color(0xFF32816A); val Peach=Color(0xFFAD663D); val Lilac=Color(0xFF7955A5)
 private val Light=lightColorScheme(primary=Blue, onPrimary=Color.White,primaryContainer=Color(0xFFE1EBFC),onPrimaryContainer=Color(0xFF24466F),secondary=Mint,secondaryContainer=Color(0xFFDCEFE5),tertiary=Lilac,background=Color(0xFFF4F6FA),surface=Color.White,surfaceVariant=Color(0xFFE9EDF3),onSurface=Color(0xFF222D3B),onSurfaceVariant=Color(0xFF596575),outline=Color(0xFF8794A5),outlineVariant=Color(0xFFDCE3EC),error=Color(0xFFB33A43),tertiaryContainer=Color(0xFFECE3FA),onTertiaryContainer=Color(0xFF4D336D))
 private val Dark=darkColorScheme(primary=Color(0xFFA9C8F6),secondary=Color(0xFF9AD5B9),tertiary=Color(0xFFD4BAF7),background=Color(0xFF141922),surface=Color(0xFF202733),surfaceVariant=Color(0xFF303947),onSurface=Color(0xFFE7EBF3),onSurfaceVariant=Color(0xFFB9C4D3),outline=Color(0xFF8C9AAA),outlineVariant=Color(0xFF414C5B),primaryContainer=Color(0xFF294A71),onPrimaryContainer=Color(0xFFD9E8FF),secondaryContainer=Color(0xFF244B40),onSecondaryContainer=Color(0xFFD3F4E4),tertiaryContainer=Color(0xFF493461),onTertiaryContainer=Color(0xFFEBDDFF))
+private val taskPalette=listOf(
+    Color(0xFF3978B8),Color(0xFF8A5BB0),Color(0xFF388B76),Color(0xFFB86A42),Color(0xFFAD517C),
+    Color(0xFF5776A9),Color(0xFF8B7938),Color(0xFF4B8B9B),Color(0xFF946544),Color(0xFF6478C0)
+)
+fun taskColor(task:Task?):Color {
+    val identity=task?.groupId?.ifBlank{task.id}.orEmpty()
+    return taskPalette[Math.floorMod(identity.hashCode(),taskPalette.size)]
+}
+
+internal val ScreenWidth=760.dp
+internal val ScreenGutter=16.dp
+
+@Composable internal fun WindowFrame(content:@Composable ()->Unit){
+    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=androidx.compose.ui.Alignment.TopCenter){
+        Box(Modifier.widthIn(max=ScreenWidth).fillMaxSize()){content()}
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable internal fun ActionFlow(content:@Composable ()->Unit){
+    FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),
+        verticalArrangement=Arrangement.spacedBy(4.dp)){content()}
+}
+
 val LocalGlass=compositionLocalOf { false }
-@Composable fun PlanidroidTheme(theme:String,glass:Boolean,content:@Composable ()->Unit){val dark=when(theme){"Claro"->false;"Oscuro"->true;else->isSystemInDarkTheme()}; MaterialTheme(colorScheme=if(dark)Dark else Light,typography=Typography(headlineLarge=Typography().headlineLarge.copy(fontWeight=FontWeight.SemiBold,letterSpacing=(-1).sp),headlineMedium=Typography().headlineMedium.copy(fontWeight=FontWeight.SemiBold,letterSpacing=(-0.5f).sp),titleLarge=Typography().titleLarge.copy(fontWeight=FontWeight.SemiBold),titleMedium=Typography().titleMedium.copy(fontWeight=FontWeight.SemiBold))){CompositionLocalProvider(LocalGlass provides glass,content=content)}}
+@Composable fun PlanidroidTheme(
+    theme:String,glass:Boolean,systemColors:Boolean=false,content:@Composable ()->Unit
+){
+    val dark=when(theme){"Claro"->false;"Oscuro"->true;else->isSystemInDarkTheme()}
+    val context=androidx.compose.ui.platform.LocalContext.current
+    val scheme=if(systemColors&&android.os.Build.VERSION.SDK_INT>=31){
+        if(dark)dynamicDarkColorScheme(context)else dynamicLightColorScheme(context)
+    }else if(dark)Dark else Light
+    val standard=Typography()
+    val type=Typography(
+        headlineLarge=standard.headlineLarge.copy(fontWeight=FontWeight.SemiBold,letterSpacing=(-1).sp),
+        headlineMedium=standard.headlineMedium.copy(fontWeight=FontWeight.SemiBold,letterSpacing=(-0.5f).sp),
+        titleLarge=standard.titleLarge.copy(fontWeight=FontWeight.SemiBold),
+        titleMedium=standard.titleMedium.copy(fontWeight=FontWeight.SemiBold)
+    )
+    MaterialTheme(colorScheme=scheme,typography=type){
+        CompositionLocalProvider(LocalGlass provides glass,content=content)
+    }
+}
 @Composable fun soft(tint:Color,alpha:Float=.12f)=lerp(MaterialTheme.colorScheme.surface,tint,alpha)
 @Composable fun GlassCard(modifier:Modifier=Modifier,tint:Color=MaterialTheme.colorScheme.primary,content:@Composable ColumnScope.()->Unit){val shape=RoundedCornerShape(20.dp);Surface(modifier.fillMaxWidth(),shape=shape,color=soft(tint,if(LocalGlass.current).20f else .045f),border=null){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=content)}}
 @Composable fun categoryColor(category:Category)=when(category){Category.DEADLINE->Peach;Category.SOON->Mint;Category.SOMEDAY->Lilac;Category.INBOX->MaterialTheme.colorScheme.primary}

@@ -47,19 +47,41 @@ import es.planidroid.app.domain.*
     }},confirmButton={TextButton(enabled=!busy&&valid,onClick={submit(n!!)}){Text("Consumir")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})
 }
 
-@Composable internal fun RestockBanner(items:List<Item>,replenish:(Item,Boolean)->Unit,dismiss:(Item)->Unit,enabled:Boolean=true){
+@Composable internal fun RestockBanner(
+    items:List<Item>,replenish:(Item,Boolean)->Unit,dismiss:(Item)->Unit,enabled:Boolean=true
+){
     var index by remember{mutableIntStateOf(0)}
-    val item=items.getOrNull(index.coerceAtMost((items.size-1).coerceAtLeast(0)))?:return
-    GlassCard(tint=Peach){
-        Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.ShoppingCart,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("Para reponer",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);if(items.size>1)TextButton(onClick={index=(index+1)%items.size}){Text(((index.coerceAtMost(items.size-1))+1).toString()+"/"+items.size);Icon(Icons.Default.ChevronRight,"Siguiente sugerencia")}}
-        val recipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE||RecipeBook.matches(item.name,LocalRecipeLibrary.current.recipes).isNotEmpty()
-        Row(verticalAlignment=Alignment.CenterVertically){
-            Column(Modifier.weight(1f)){Text(item.name,style=MaterialTheme.typography.titleSmall);Text("Sin existencias",style=MaterialTheme.typography.labelSmall)}
-            IconButton(enabled=enabled,onClick={dismiss(item)}){Icon(Icons.Default.Close,"Descartar sugerencia de "+item.name,Modifier.size(18.dp))}
+    var expanded by remember{mutableStateOf(false)}
+    val item=items.getOrNull(index.coerceAtMost(items.lastIndex.coerceAtLeast(0)))?:return
+    if(!expanded){
+        Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.secondaryContainer,
+            onClick={expanded=true},enabled=enabled){
+            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                Icon(Icons.Default.ShoppingCart,null,Modifier.size(20.dp))
+                Text(items.size.toString()+if(items.size==1)" producto para reponer" else " productos para reponer",
+                    Modifier.weight(1f),style=MaterialTheme.typography.titleSmall)
+                Icon(Icons.Default.ExpandMore,null)
+            }
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically){
-            TextButton(enabled=enabled,onClick={replenish(item,false)}){Icon(Icons.Default.AddShoppingCart,null,Modifier.size(18.dp));Spacer(Modifier.width(4.dp));Text("Añadir")}
-            if(recipe){VerticalDivider(Modifier.height(24.dp));TextButton(enabled=enabled,onClick={replenish(item,true)},modifier=Modifier.weight(1f)){Text("Añadir ingredientes de la receta")}}
+        return
+    }
+    GlassCard(tint=Peach){
+        Row(verticalAlignment=Alignment.CenterVertically){
+            ProductGlyph(item.name,Modifier.size(34.dp),item.icon)
+            Column(Modifier.weight(1f).padding(start=8.dp)){
+                Text(item.name,style=MaterialTheme.typography.titleSmall)
+                Text("Sin existencias",style=MaterialTheme.typography.labelSmall)
+            }
+            if(items.size>1)IconButton(onClick={index=(index+1)%items.size}){Icon(Icons.Default.ChevronRight,"Siguiente sugerencia")}
+            IconButton(onClick={expanded=false}){Icon(Icons.Default.ExpandLess,"Ocultar sugerencias")}
+        }
+        val recipe=InventoryConsumption.kind(item)==InventoryKind.RECIPE||
+            RecipeBook.matches(item.name,LocalRecipeLibrary.current.recipes).isNotEmpty()
+        ActionFlow {
+            TextButton(enabled=enabled,onClick={replenish(item,false)}){Text("Añadir a la compra")}
+            if(recipe)TextButton(enabled=enabled,onClick={replenish(item,true)}){Text("Añadir ingredientes")}
+            TextButton(enabled=enabled,onClick={dismiss(item)}){Text("Descartar")}
         }
     }
 }
@@ -98,4 +120,32 @@ import es.planidroid.app.domain.*
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     }},confirmButton={TextButton(enabled=valid&&!busy,onClick={submit()}){Text(if(recipeMode)"Añadir ingredientes"else "Añadir")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Ahora no")}})
+}
+
+
+@Composable internal fun MoveInventoryDialog(
+    item:Item,destinations:List<Furniture>,close:()->Unit,
+    move:(Furniture,String,(String?)->Unit)->Unit
+){
+    var targetId by remember(item.id){mutableStateOf(destinations.firstOrNull()?.id.orEmpty())}
+    val target=destinations.find{it.id==targetId}
+    val zones=target?.compartments?.ifEmpty{listOf("General")}.orEmpty()
+    var zone by remember(targetId){mutableStateOf(zones.firstOrNull().orEmpty())}
+    var busy by remember{mutableStateOf(false)}
+    var error by remember{mutableStateOf("")}
+    AlertDialog(onDismissRequest={if(!busy)close()},title={Text("Mover "+item.name)},text={
+        Column(Modifier.heightIn(max=330.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
+            if(destinations.isEmpty())Text("Añade otro mueble a esta casa para mover productos.")
+            else{
+                Choice("Mueble",destinations.map{it.id},targetId,
+                    {id->destinations.find{it.id==id}?.let{value->if(value.room.isBlank())value.name else value.name+" · "+value.room}.orEmpty()}){if(!busy)targetId=it}
+                if(zones.isNotEmpty())Choice("Compartimento",zones,zone,{it}){if(!busy)zone=it}
+            }
+            if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+        }
+    },confirmButton={Button(enabled=!busy&&target!=null&&zone in zones,onClick={
+        val destination=target?:return@Button
+        busy=true;error=""
+        move(destination,zone){failure->busy=false;if(failure==null)close()else error=failure}
+    }){Text("Mover")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})
 }

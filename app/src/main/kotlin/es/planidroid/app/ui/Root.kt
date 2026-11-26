@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import es.planidroid.app.domain.*
@@ -41,6 +42,7 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val uid by model.scope.collectAsStateWithLifecycle()
     val access by model.access.collectAsStateWithLifecycle()
     val theme by model.theme.collectAsStateWithLifecycle();val glass by model.glass.collectAsStateWithLifecycle()
+    val preferences by model.viewPreferences.collectAsStateWithLifecycle()
     val allowed=access.uid==uid&&access.allowed&&uid!="local"
     val lifecycle=androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle,uid,allowed){
@@ -48,15 +50,25 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
         lifecycle.addObserver(observer)
         onDispose{lifecycle.removeObserver(observer)}
     }
-    if(allowed){key(uid){PrivateScreen(model)}}else PlanidroidTheme(theme,glass){AccountGate(model,uid,access.verified)}
+    if(allowed){key(uid){PrivateScreen(model)}}else PlanidroidTheme(theme,glass,preferences.systemColors){AccountGate(model,uid,access.verified)}
 }
 @Composable private fun PrivateScreen(model: PlanidroidModel) {
     val theme by model.theme.collectAsStateWithLifecycle(); val glass by model.glass.collectAsStateWithLifecycle()
     val scope by model.scope.collectAsStateWithLifecycle(); val all by model.rows.collectAsStateWithLifecycle(); val message by model.message.collectAsStateWithLifecycle()
     val preferences by model.viewPreferences.collectAsStateWithLifecycle()
-    val rows=all.filter { it.scope==scope };val ext by model.external.collectAsStateWithLifecycle();val external=if(ext.first==scope)ext.second else emptyList();val blocked=remember(external){external.filter{it.busy}.map{Interval(it.start,it.end)}}
+    val rows=all.filter { it.scope==scope }
+    val blocked=emptyList<Interval>()
+    val importPreview by model.calendarFile.collectAsStateWithLifecycle()
     val tasks=remember(rows){ rows.filter{it.kind==Kind.TASK.name}.mapNotNull { runCatching{decode<Task>(it.payload)}.getOrNull() } }
     val sessions=remember(rows){ rows.filter{it.kind==Kind.SESSION.name}.mapNotNull { runCatching{decode<Session>(it.payload)}.getOrNull() } }
+    val busySessions=remember(tasks,sessions){
+        val index=tasks.associateBy{it.id}
+        sessions.filterNot{OverlapPolicy.calendarFree(it,index[it.taskId])}
+    }
+    val actionable=remember(tasks,sessions){
+        val fixed=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
+        tasks.filterNot{it.id in fixed}
+    }
     val furniture=remember(rows){ rows.filter{it.kind==Kind.FURNITURE.name}.mapNotNull { runCatching{decode<Furniture>(it.payload)}.getOrNull() } }
     val homes=remember(rows){rows.filter{it.kind==Kind.HOME.name}.mapNotNull{runCatching{decode<Home>(it.payload)}.getOrNull()}}
     val savedRecipes=remember(rows){rows.filter{it.kind==Kind.RECIPE.name}.mapNotNull{runCatching{decode<SavedRecipe>(it.payload)}.getOrNull()}}
@@ -65,41 +77,88 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     val groups=remember(rows){ rows.filter{it.kind==Kind.GROUP.name}.mapNotNull { runCatching{decode<Group>(it.payload)}.getOrNull() } }
     val shopping=remember(rows){rows.filter{it.kind==Kind.SHOPPING.name}.mapNotNull{runCatching{decode<Shopping>(it.payload)}.getOrNull()}}
     val purchases=remember(rows){rows.filter{it.kind==Kind.PURCHASE.name}.mapNotNull{runCatching{decode<Purchase>(it.payload)}.getOrNull()}}
-    val compactAvailability=remember(sessions,blocked,LocalDate.now()){AgendaContext.availability(sessions,blocked,LocalDate.now(),LocalDate.now().plusDays(30))}
+    val compactAvailability=remember(busySessions,blocked,LocalDate.now()){AgendaContext.availability(busySessions,blocked,LocalDate.now(),LocalDate.now().plusDays(30))}
     var history by rememberSaveable(scope){mutableStateOf(arrayListOf(Tab.HOME.name))}
     val tab=Tab.valueOf(history.lastOrNull()?:Tab.HOME.name)
     fun navigate(to:Tab){history=ArrayList(pushDestination(history,to.name))}
     val screenState=rememberSaveableStateHolder(); var edit by remember(scope){mutableStateOf<Task?>(null)}; var plan by remember(scope){mutableStateOf<Task?>(null)}
-    var manualEvent by remember(scope){mutableStateOf<java.time.LocalDate?>(null)};var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};var agendaDraft by remember(scope){mutableStateOf<Task?>(null)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
+    var calendarFocus by rememberSaveable(scope){mutableStateOf<String?>(null)}
+    var calendarEdit by remember(scope){mutableStateOf<Pair<CalendarDraft,Boolean>?>(null)};
+    val importFile=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){it?.let(model::openCalendarFile)}
+    var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};var agendaDraft by remember(scope){mutableStateOf<Task?>(null)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
+    LaunchedEffect(importPreview?.id){
+        if(importPreview!=null){
+            calendarEdit=null;edit=null;plan=null;agendaPlan=false;agendaDraft=null
+            navigate(Tab.CALENDAR)
+        }
+    }
+    fun editCalendarEvent(entry:Session,task:Task){
+        calendarEdit=CalendarDraft(entry.id,entry.calendarTitle,entry.start,entry.end,
+            isAllDayEvent(entry),task.goal,task.description,task.reminder,!OverlapPolicy.calendarFree(entry,task)) to true
+    }
+    val keyboardOpen=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
     LaunchedEffect(message){if(message.isNotBlank()){snack.showSnackbar(message);model.message.value=""}}
     var sectionBack by remember(tab){mutableStateOf<(() -> Unit)?>(null)}
     val registerBack=remember(tab){ {action:(()->Unit)?->sectionBack=action} }
     fun back(){when{agendaPlan->{agendaPlan=false;agendaDraft=null};plan!=null->plan=null;edit!=null->edit=null;sectionBack!=null->sectionBack?.invoke();history.size>1->history=ArrayList(popDestination(history))}}
     BackHandler(edit!=null || plan!=null || agendaPlan || sectionBack!=null || history.size>1){back()}
-    PlanidroidTheme(theme,glass) {
+    PlanidroidTheme(theme,glass,preferences.systemColors) {
         es.planidroid.app.update.UpdatePrompt()
         CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature },LocalRecipeLibrary provides RecipeLibrary(savedRecipes,model),LocalSectionBack provides registerBack,LocalViewPreferences provides preferences) {
-        Scaffold(containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snack)},topBar={Surface(color=MaterialTheme.colorScheme.background){Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=20.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.Default.ArrowBack,"Volver")} ;Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})}}},bottomBar={NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES).forEach{t->NavigationBarItem(selected=tab==t||(t.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS)),onClick={navigate(t);edit=null;plan=null;agendaPlan=false;agendaDraft=null},icon={Icon(when(t){Tab.HOME->Icons.Default.Home;Tab.CALENDAR->Icons.Default.CalendarMonth;Tab.CAPTURE->Icons.Default.AddCircle;Tab.TASKS->Icons.Default.Checklist;else->Icons.Default.GridView},t.label,Modifier.size(if(t==Tab.CAPTURE)30.dp else 24.dp))},label={Text(t.label,maxLines=1)})}}}){pad->
-            Box(Modifier.fillMaxSize().padding(pad)){screenState.SaveableStateProvider(tab.name){when(tab){
-                Tab.HOME->Home(tasks,sessions,{edit=it},{navigate(Tab.CAPTURE)},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},{navigate(Tab.TASKS)},{navigate(Tab.SPACES)},inventory.size,shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},{model.save(listOf(it))},{navigate(Tab.FOCUS)},external,{navigate(Tab.ASSISTANT)})
-                Tab.FOCUS->FocusScreen(tasks){id,min->model.logFocus(id,min)}
-                Tab.TASKS->TaskList(tasks,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)})
-                Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},{agendaDraft=null;agendaPlan=true},external,{manualEvent=it})
+        WindowFrame { Scaffold(contentWindowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snack)},topBar={Surface(color=MaterialTheme.colorScheme.background){Row(Modifier.fillMaxWidth().padding(horizontal=ScreenGutter,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.Default.ArrowBack,"Volver")} ;Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})}}},bottomBar={if(!keyboardOpen)NavigationBar(modifier=Modifier.padding(horizontal=8.dp),windowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES).forEach{t->NavigationBarItem(selected=tab==t||(t.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS)),onClick={navigate(t);edit=null;plan=null;agendaPlan=false;agendaDraft=null},icon={Icon(when(t){Tab.HOME->Icons.Default.Home;Tab.CALENDAR->Icons.Default.CalendarMonth;Tab.CAPTURE->Icons.Default.AddCircle;Tab.TASKS->Icons.Default.Checklist;else->Icons.Default.GridView},null,Modifier.size(if(t==Tab.CAPTURE)26.dp else 23.dp))},label={Text(t.label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelSmall)})}}}){pad->
+            Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)){screenState.SaveableStateProvider(tab.name){when(tab){
+                Tab.HOME->Home(tasks,sessions,{edit=it},{navigate(Tab.CAPTURE)},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},{navigate(Tab.TASKS)},{navigate(Tab.SPACES)},inventory.size,shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},{model.save(listOf(it))},{navigate(Tab.FOCUS)},{navigate(Tab.ASSISTANT)})
+                Tab.FOCUS->FocusScreen(actionable){id,min->model.logFocus(id,min)}
+                Tab.TASKS->TaskList(actionable,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)},{task,status->model.changeTaskStatus(task.id,status)})
+                Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},
+                    {agendaDraft=null;agendaPlan=true},addEvent={day->
+                        val start=day.atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        calendarEdit=CalendarDraft(newId(),"",start,start+3_600_000L) to false
+                    },importFile={importFile.launch(arrayOf("text/calendar","text/x-vcalendar","application/ics","application/icalendar","application/octet-stream"))},
+                    editEvent=::editCalendarEvent,focusDay=calendarFocus,consumeFocus={calendarFocus=null})
                 Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);navigate(Tab.TASKS)},{created->plan=created;navigate(Tab.TASKS)},{prefill->edit=prefill},compactAvailability)
-                Tab.ASSISTANT->AssistantScreen(scope,tasks,{model.saveTasks(it)},{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
+                Tab.ASSISTANT->AssistantScreen(scope,actionable,shoppingLists,model,{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
                 Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.SHARED)},{navigate(Tab.ASSISTANT)},{navigate(Tab.TOOLS)})
                 Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
                 Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
                 Tab.SHARED->SharedScreen(scope)
                 Tab.SETTINGS->SettingsScreen(model,scope)
-                Tab.TOOLS->ToolsScreen(model,scope,theme,glass)
+                Tab.TOOLS->ToolsScreen(model,scope)
             }}}
         }
-        manualEvent?.let{day->ManualEventDialog(day,{manualEvent=null},{title,start,end,reminder->model.createManualEvent(title,start,end,reminder);if(reminder&&Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);manualEvent=null})}
-        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null;if(tab==Tab.CAPTURE)navigate(Tab.TASKS)},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId="",overlapWith=emptyList()));edit=null},tasks,scope,compactAvailability) }
-        if(agendaPlan){val draft=agendaDraft;val candidates=if(draft==null)tasks else tasks.filterNot{it.id==draft.id}+draft;AgendaEditor(candidates,sessions,{agendaPlan=false;agendaDraft=null},{new,old,updates,finished->val selectedDraft=draft?.takeIf{d->new.any{it.taskId==d.id}}?.let{d->updates.find{it.id==d.id}?:d};model.commitPlan(new,old,updatedTask=selectedDraft,updates=updates.filterNot{it.id==draft?.id},allowBatch=true,finished={failure->finished(failure);if(failure==null){agendaPlan=false;agendaDraft=null;navigate(Tab.CALENDAR)}})},blocked,scope,draft)}
-        plan?.let { t -> PlanDialog(t,sessions,{plan=null},{updated,blocks,replacing,finished->model.commitPlan(blocks,replacing,updated,finished={failure->finished(failure);if(failure==null){plan=null;navigate(Tab.CALENDAR)}})},blocked,tasks,scope,{draft->agendaDraft=draft;plan=null;agendaPlan=true}) }
+        }
+        fun requestEventReminder(remind:Boolean){
+            if(remind&&Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+                permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        calendarEdit?.let{(draft,revising)->
+            CalendarEventDialog(draft,if(revising)"Editar evento" else "Nuevo evento",{calendarEdit=null},save={value,done->
+                val completed:(String?)->Unit={failure->done(failure);if(failure==null)requestEventReminder(value.reminder)}
+                if(revising)model.updateCalendarEvent(draft.sourceId,value,completed)
+                else model.saveCalendarEvents(listOf(value),false,completed)
+            },delete=if(revising)({model.delete(draft.sourceId,Kind.SESSION)}) else null)
+        }
+        importPreview?.let{preview->
+            val close={model.dismissCalendarFile(preview.id)}
+            when{
+                preview.file!=null->CalendarFileDialog(preview.file,close){events,done->
+                    model.saveCalendarEvents(events,true){failure->
+                        done(failure)
+                        if(failure==null){
+                            calendarFocus=events.minOfOrNull{it.start}?.let{sessionDate(it).toString()}
+                            requestEventReminder(events.any{it.reminder})
+                        }
+                    }
+                }
+                else->AlertDialog(onDismissRequest=close,title={Text("Importar calendario")},
+                    text={val error=preview.error;if(error!=null)Text(error)else LinearProgressIndicator(Modifier.fillMaxWidth())},
+                    confirmButton={TextButton(onClick=close){Text("Cerrar")}})
+            }
+        }
+        edit?.let { task -> TaskEditor(task,groups,{edit=null},{t->model.save(t); if(t.reminder && Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.POST_NOTIFICATIONS);edit=null;if(tab==Tab.CAPTURE)navigate(Tab.TASKS)},{model.delete(task.id,Kind.TASK);edit=null},{t->edit=null;plan=t},{t->model.save(t.copy(id=newId(),title=t.title+" (copia)",dependencies=emptyList(),seriesId="",overlapWith=emptyList()));edit=null},actionable,scope,compactAvailability) }
+        if(agendaPlan){val draft=agendaDraft;val candidates=if(draft==null)actionable else actionable.filterNot{it.id==draft.id}+draft;AgendaEditor(candidates,busySessions,{agendaPlan=false;agendaDraft=null},{new,old,updates,finished->val selectedDraft=draft?.takeIf{d->new.any{it.taskId==d.id}}?.let{d->updates.find{it.id==d.id}?:d};model.commitPlan(new,old,updatedTask=selectedDraft,updates=updates.filterNot{it.id==draft?.id},allowBatch=true,finished={failure->finished(failure);if(failure==null){agendaPlan=false;agendaDraft=null;navigate(Tab.CALENDAR)}})},blocked,scope,draft)}
+        plan?.let { t -> PlanDialog(t,busySessions,{plan=null},{updated,blocks,replacing,finished->model.commitPlan(blocks,replacing,updated,finished={failure->finished(failure);if(failure==null){plan=null;navigate(Tab.CALENDAR)}})},blocked,actionable,scope,{draft->agendaDraft=draft;plan=null;agendaPlan=true}) }
         }
         onlineFeature?.let{feature->OnlineSignInDialog(feature,model,scope){onlineFeature=null}}
     }

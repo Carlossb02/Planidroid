@@ -22,4 +22,10 @@ class RecipeBookTest{
         val r=SavedRecipe(title="Croquetas",ingredients=listOf(RecipeIngredient("Harina",1.0,"oz")))
         assertTrue(runCatching{RecipeBook.validate(r)}.isFailure)
     }
+    @org.junit.Test fun ingredientQuantitiesScaleWithoutInventingMissingValues(){
+        org.junit.Assert.assertEquals(225.0,RecipeBook.scaleAmount(150.0,2,3),0.0001)
+        org.junit.Assert.assertEquals(0.3333,RecipeBook.scaleAmount(1.0,3,1),0.0001)
+        org.junit.Assert.assertEquals(0.0,RecipeBook.scaleAmount(0.0,2,4),0.0)
+        org.junit.Assert.assertEquals(100.0,RecipeBook.scaleAmount(100.0,0,4),0.0)
+    }
 }

@@ -66,9 +66,9 @@ import kotlinx.coroutines.launch
     val preview=proposal
     LaunchedEffect(preview){if(preview!=null)listState.scrollToItem(0)}
     LaunchedEffect(tasks,sessions,external){if(!submitted)reset()}
-    Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+    Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
             LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 if(preview==null){
                 item{
@@ -127,7 +127,7 @@ import kotlinx.coroutines.launch
                                         Text(other.title)
                                     }
                                 }
-                                Text("Las citas de Google Calendar continúan bloqueando el horario.",style=MaterialTheme.typography.bodySmall)
+                                Text("Los eventos del calendario mantienen su horario.",style=MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
