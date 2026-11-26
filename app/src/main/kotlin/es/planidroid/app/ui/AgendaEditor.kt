@@ -3,6 +3,7 @@ package es.planidroid.app.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -15,11 +16,12 @@ import java.time.*
 import kotlinx.coroutines.launch
 
 @Composable fun AgendaEditor(tasks:List<Task>,sessions:List<Session>,close:()->Unit,accept:(List<Session>,List<Session>,List<Task>,(String?)->Unit)->Unit,external:List<Interval> = emptyList(),uid:String="local",draft:Task?=null){
+    val preferences=LocalViewPreferences.current
     val today=LocalDate.now()
     val now=remember{System.currentTimeMillis()}
     val eligible=tasks.filter{it.status !in listOf(Status.DONE,Status.ARCHIVED,Status.BLOCKED)&&TaskConstraints.unmet(it,tasks).isEmpty()}
     fun effort(t:Task)=t.minutes.takeIf{it>0}?:t.phases.sumOf{it.minutes}
-    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else TaskConstraints.remaining(it,sessions)>0||effort(it)==0}.map{it.id}.toSet())}
+    var picked by remember{mutableStateOf(eligible.filter{if(draft!=null)it.id==draft.id else (effort(it)>0&&TaskConstraints.remaining(it,sessions,now)>0&&it.due.ifBlank{today.toString()}>=today.toString())}.map{it.id}.toSet())}
     var estimates by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var topics by remember{mutableStateOf<Map<String,String>>(emptyMap())}
     var expanded by remember{mutableStateOf<String?>(null)}
@@ -30,16 +32,16 @@ import kotlinx.coroutines.launch
     var exceptions by remember{mutableStateOf("")};var advanced by remember{mutableStateOf(false)}
     var aiOpen by remember{mutableStateOf(false)}
     var includeToday by remember{mutableStateOf(true)}
-    var replan by remember{mutableStateOf(draft!=null)};var days by remember{mutableStateOf(DayOfWeek.entries.toSet())}
+    var replan by remember{mutableStateOf(draft!=null)};var days by remember{mutableStateOf((if(preferences.workdaysOnly)DayOfWeek.entries.take(5) else DayOfWeek.entries).toSet())}
     var proposal by remember{mutableStateOf<AgendaProposal?>(null)};var replacing by remember{mutableStateOf(emptyList<Session>())}
     var approvedUpdates by remember{mutableStateOf(emptyList<Task>())}
     var error by remember{mutableStateOf("")};var submitted by remember{mutableStateOf(false)}
     val ctx=androidx.compose.ui.platform.LocalContext.current;val coroutine=rememberCoroutineScope()
     var aiBusy by remember{mutableStateOf(false)};var aiConsent by remember{mutableStateOf(false)};var connect by remember{mutableStateOf(false)}
-    var keepBreaks by remember{mutableStateOf(true)};var restPolicies by remember{mutableStateOf(emptyMap<String,Triple<Int,Int,String>>())}
+    var keepBreaks by remember{mutableStateOf(preferences.reserveBreaks)};var restPolicies by remember{mutableStateOf(emptyMap<String,Triple<Int,Int,String>>())}
     var advice by remember{mutableStateOf("")};var suggested by remember{mutableStateOf(emptySet<String>())}
     var request by remember{mutableStateOf("")}
-    fun askGemini(){aiBusy=true;advice="";suggested=emptySet();coroutine.launch{try{
+    fun askGemini(){aiBusy=true;advice="";suggested=emptySet();restPolicies=emptyMap();coroutine.launch{try{
         val payload=AgendaContext.build(eligible,sessions,external,today,runCatching{LocalDate.parse(end)}.getOrDefault(today.plusDays(7)),picked)+"\nPetición: "+request.take(400)
         val response=es.planidroid.app.sync.AiConfig.provider(ctx,uid).agendaAdvice(payload)
         advice=response.optString("answer").take(3000)
@@ -60,37 +62,39 @@ import kotlinx.coroutines.launch
     }
     val replacements=if(replan)sessions.filter{it.taskId in picked&&!it.done&&it.start>now&&it.calendarTitle.isBlank()}else emptyList()
     val kept=sessions.filterNot{it in replacements}
+    val listState=rememberLazyListState()
+    val preview=proposal
+    LaunchedEffect(preview){if(preview!=null)listState.scrollToItem(0)}
     LaunchedEffect(tasks,sessions,external){if(!submitted)reset()}
     Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
         Surface(Modifier.fillMaxSize()){
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
-            LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+            LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                if(preview==null){
                 item{
-                    Section("Organizar agenda")
+                    Section("Planificar tareas")
                     TextButton(onClick={aiOpen=!aiOpen}){Text(if(aiOpen)"Ocultar Gemini" else "✦ Optimizar con Gemini")}
                     if(aiOpen){Field(request,{request=it.take(1200)},"¿Qué quieres ajustar?",false)
                     OutlinedButton(enabled=!aiBusy,onClick={if(!es.planidroid.app.sync.AiConfig.configured(ctx,uid))connect=true else aiConsent=true},modifier=Modifier.fillMaxWidth()){Text(if(aiBusy)"Analizando calendario…" else "Consultar")}}
                     if(advice.isNotBlank())GlassCard(tint=Lilac){Text(advice);restPolicies.forEach{(id,p)->Text((eligible.find{it.id==id}?.title?:"Tarea")+": "+p.first+" min de trabajo / "+p.second+" min de pausa · "+p.third,style=MaterialTheme.typography.bodySmall)};suggested.forEach{id->Text("Revisar: "+eligible.find{it.id==id}?.title.orEmpty())};if(suggested.isNotEmpty())TextButton(onClick={picked=picked+suggested;replan=true;reset()}){Text("Seleccionar tareas sugeridas")}}
-                    Row(verticalAlignment=Alignment.CenterVertically){
-                        Switch(replan,{replan=it;reset()});Text("Reorganizar sesiones futuras",Modifier.padding(start=8.dp))
-                    }
-                    Row(verticalAlignment=Alignment.CenterVertically){Switch(includeToday,{includeToday=it;reset()});Text("Puedo empezar hoy",Modifier.padding(start=8.dp))}
-                    TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar disponibilidad" else "Ajustar disponibilidad")}
+                    TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar opciones" else "Disponibilidad y opciones")}
                     if(advanced){
+                        Row(verticalAlignment=Alignment.CenterVertically){Switch(replan,{replan=it;reset()});Text("Reorganizar sesiones futuras",Modifier.padding(start=8.dp))}
+                        Row(verticalAlignment=Alignment.CenterVertically){Switch(includeToday,{includeToday=it;reset()});Text("Empezar hoy",Modifier.padding(start=8.dp))}
                         DateField(end,{end=it;reset()},"Último día",false)
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(from,{from=it;reset()},"Desde HH:mm")};Column(Modifier.weight(1f)){Field(until,{until=it;reset()},"Hasta HH:mm")}}
                         Field(max,{max=it;reset()},"Máximo por sesión (min)")
                         Field(margin,{margin=it;reset()},"Margen antes de fecha límite (días)")
                         Field(exceptions,{exceptions=it;reset()},"Días excluidos AAAA-MM-DD, separados por coma")
                         DayOfWeek.entries.chunked(4).forEach{group->Row(horizontalArrangement=Arrangement.spacedBy(5.dp)){group.forEach{d->FilterChip(d in days,{days=if(d in days)days-d else days+d;reset()},label={Text(listOf("L","M","X","J","V","S","D")[d.value-1])})}}}
-                    }else Text("Hasta "+end+" · "+from+" – "+until,style=MaterialTheme.typography.bodySmall)
+                    }else Text("Hasta "+end+" · "+if(from=="00:00"&&until=="00:00")"horario de cada tarea" else from+" – "+until,style=MaterialTheme.typography.bodySmall)
                     if(eligible.isEmpty())Text("No hay tareas pendientes disponibles.")
                 }
                 items(eligible,key={it.id}){t->
                     val draft=candidate(t)
-                    val remaining=TaskConstraints.remaining(draft,kept)
+                    val remaining=TaskConstraints.remaining(draft,kept,now)
                     val hasFuture=sessions.any{it.taskId==t.id&&!it.done&&it.start>now}
-                    GlassCard(tint=categoryColor(t.category)){
+                    Column(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
                         Row(verticalAlignment=Alignment.CenterVertically){
                             Checkbox(t.id in picked,{v->picked=if(v)picked+t.id else picked-t.id;reset()})
                             Column(Modifier.weight(1f)){
@@ -133,23 +137,31 @@ import kotlinx.coroutines.launch
                         runCatching{
                             val selected=eligible.filter{it.id in picked}.map(::candidate)
                             require(selected.all{it.minutes in 1..100000}){"Indica una duración o el número de temas de cada tarea seleccionada."}
-                            val last=LocalDate.parse(end);val buffer=margin.toLong();require(buffer in 0..30)
+                            val last=runCatching{LocalDate.parse(end)}.getOrNull() ?: error("Elige un último día válido.")
+                            val first=if(includeToday)today else today.plusDays(1)
+                            require(last in first..first.plusDays(366)){"El último día debe estar dentro del próximo año."}
+                            val buffer=margin.toLongOrNull()?.takeIf{it in 0..30} ?: error("Indica un margen de 0 a 30 días.")
+                            val sessionLimit=max.toIntOrNull()?.takeIf{it in 1..1440} ?: error("Indica un máximo por sesión de 1 a 1440 minutos.")
+                            require(days.isNotEmpty()){"Selecciona al menos un día disponible."}
+                            val startTime=runCatching{LocalTime.parse(from)}.getOrNull() ?: error("Revisa la hora de inicio (HH:mm).")
+                            val endTime=runCatching{LocalTime.parse(until)}.getOrNull() ?: error("Revisa la hora de fin (HH:mm).")
+                            require(startTime!=endTime||startTime==LocalTime.MIDNIGHT){"Usa dos horas distintas o 00:00 en ambos campos para respetar el horario por tarea."}
                             val zone=ZoneId.systemDefault()
                             val excluded=exceptions.split(',').map{it.trim()}.filter{it.isNotBlank()}.map{LocalDate.parse(it)}.map{Interval(it.atStartOfDay(zone).toInstant().toEpochMilli(),it.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())}
                             val updates=tasks.map{t->selected.find{it.id==t.id}?:t.copy(overlapWith=permissions[t.id]?:t.overlapWith)}
                             val inputs=selected.map{t->
                                 val phaseBudgets=t.phases.filterNot{it.done}.map{p->p.id to (p.minutes-maxOf(p.actualMinutes,kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&s.done}.sumOf{s->((s.end-s.start)/60000).toInt()})-kept.filter{s->s.taskId==t.id&&!s.isBreak&&s.phaseId==p.id&&!s.done&&s.end>now}.sumOf{s->((s.end-s.start)/60000).toInt()}).coerceAtLeast(0)}
-                                AgendaInput(t.id,t.title,TaskConstraints.remaining(t,kept),t.due.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it).minusDays(buffer)}?:last,t.priority.ordinal,phaseBudgets,t.startDate.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it)})
+                                AgendaInput(t.id,t.title,TaskConstraints.remaining(t,kept,now),t.due.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it).minusDays(buffer)}?:last,t.priority.ordinal,phaseBudgets,t.startDate.takeIf{it.isNotBlank()}?.let{LocalDate.parse(it)})
                             }
-                            val p=AgendaPlanner.plan(inputs,if(includeToday)today else today.plusDays(1),last,days,LocalTime.parse(from),LocalTime.parse(until),max.toInt(),external+excluded,zone,minStart=System.currentTimeMillis()+30_000L,existing=kept,tasks=updates)
+                            val p=AgendaPlanner.plan(inputs,first,last,days,startTime,endTime,sessionLimit,external+excluded,zone,minStart=System.currentTimeMillis()+30_000L,existing=kept,tasks=updates)
                             require(replacements.none{old->p.deficits.any{it.taskId==old.taskId}}){"Una tarea existente perdería tiempo reservado. Amplía el horario o desmarca esa tarea."}
                             Triple(p,replacements,updates.filter{u->tasks.find{it.id==u.id}!=u})
-                        }.onSuccess{(p,old,updates)->proposal=p;replacing=old;approvedUpdates=updates;error=if(p.blocks.isEmpty())"No hay sesiones nuevas que reservar. Revisa el tiempo y los días disponibles." else ""}
+                        }.onSuccess{(p,old,updates)->proposal=p;replacing=old;approvedUpdates=updates;error=if(p.blocks.isEmpty()&&p.deficits.isEmpty())"No hay sesiones nuevas que reservar." else ""}
                             .onFailure{error=it.message?:"Revisa la duración, fechas y disponibilidad.";proposal=null}
                     }){Text("Calcular propuesta")}
-                    if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
                 }
-                proposal?.let{p->
+                }
+                preview?.let{p->
                     item{GlassCard(tint=if(p.deficits.isEmpty())Mint else Peach){
                         Text(if(p.deficits.isEmpty())"Plan viable" else "No cabe todo",style=MaterialTheme.typography.headlineSmall)
                         Text(p.blocks.size.toString()+" sesiones · "+p.blocks.sumOf{(it.end-it.start)/60000}+" min")
@@ -157,18 +169,55 @@ import kotlinx.coroutines.launch
                         if(p.breaks.isNotEmpty()){Text(p.breaks.sumOf{(it.end-it.start)/60000}.toString()+" min de descansos sugeridos");Row(verticalAlignment=Alignment.CenterVertically){Checkbox(keepBreaks,{keepBreaks=it});Text("Reservar descansos en el calendario")}}
                         p.deficits.forEach{Text(it.title+": faltan "+it.minutes+" min")}
                     }}
-                    items(p.blocks){b->GlassCard{
-                        Text(sessionDate(b.start).toString()+" · "+time(b.start)+" – "+time(b.end),style=MaterialTheme.typography.labelLarge)
-                        Text(tasks.find{it.id==b.taskId}?.title.orEmpty(),style=MaterialTheme.typography.titleMedium)
-                        tasks.find{it.id==b.taskId}?.phases?.find{it.id==b.phaseId}?.let{Text(it.title)}
-                        val approved=tasks.map{t->approvedUpdates.find{it.id==t.id}?:t}
-                        if(p.blocks.any{other->other.taskId!=b.taskId&&other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)}||kept.any{other->other.start<b.end&&b.start<other.end&&OverlapPolicy.allowed(b.taskId,other.taskId,approved)})Text("Solapamiento autorizado",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
-                    }}
-                    if(p.breaks.isNotEmpty())item{GlassCard(tint=Mint){Text("Descansos sugeridos",style=MaterialTheme.typography.titleMedium);p.breaks.take(50).forEach{Text(sessionDate(it.start).toString()+" · "+time(it.start)+" – "+time(it.end))}}}
-                    item{Button(enabled=p.blocks.isNotEmpty()&&!aiBusy&&!submitted,modifier=Modifier.fillMaxWidth(),onClick={if(p.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){reset();error="El horario ha avanzado. Calcula de nuevo."}else{submitted=true;accept(p.sessions(keepBreaks),replacing,approvedUpdates){failure->submitted=false;if(failure!=null)error=failure}}}){Text(if(p.deficits.isEmpty())"Aceptar planificación" else "Aceptar plan parcial")}}
+                    val approved=tasks.map{t->approvedUpdates.find{it.id==t.id}?:t}
+                    p.blocks.groupBy{sessionDate(it.start)}.forEach { (day,blocks) ->
+                        item { Text(day.toString(),Modifier.padding(top=8.dp),style=MaterialTheme.typography.titleMedium) }
+                        items(blocks){block->
+                            val task=approved.find{it.id==block.taskId}
+                            Row(Modifier.fillMaxWidth().padding(vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                                Text(time(block.start)+" – "+time(block.end),style=MaterialTheme.typography.labelLarge)
+                                Column(Modifier.weight(1f)){
+                                    Text(task?.title.orEmpty(),style=MaterialTheme.typography.titleSmall)
+                                    task?.phases?.find{it.id==block.phaseId}?.let{Text(it.title,style=MaterialTheme.typography.bodySmall)}
+                                    if(p.blocks.any{other->other.taskId!=block.taskId&&other.start<block.end&&block.start<other.end&&OverlapPolicy.allowed(block.taskId,other.taskId,approved)}||
+                                        kept.any{other->other.start<block.end&&block.start<other.end&&OverlapPolicy.allowed(block.taskId,other.taskId,approved)})
+                                        Text("Solapamiento autorizado",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                    if(p.breaks.isNotEmpty())item{
+                        var open by remember{mutableStateOf(false)}
+                        TextButton(onClick={open=!open}){Text(if(open)"Ocultar horas de descanso" else "Ver horas de descanso")}
+                        if(open)p.breaks.take(50).forEach{Text(sessionDate(it.start).toString()+" · "+time(it.start)+" – "+time(it.end))}
+                    }
+
                 }
             }
-            Surface(tonalElevation=2.dp){Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically){TextButton(enabled=!submitted,onClick=close){Text("Cerrar")};Spacer(Modifier.weight(1f));if(submitted)CircularProgressIndicator(Modifier.size(24.dp));if(error.isNotBlank())Text(error,Modifier.weight(2f),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}}
+            Surface(tonalElevation=2.dp){
+                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)){
+                    if(error.isNotBlank())Text(error,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        TextButton(enabled=!submitted,onClick={if(preview==null)close()else reset()}){
+                            Text(if(preview==null)"Cerrar" else "Ajustar")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if(submitted)CircularProgressIndicator(Modifier.size(24.dp))
+                        if(preview!=null)Button(enabled=preview.blocks.isNotEmpty()&&!aiBusy&&!submitted,onClick={
+                            if(preview.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){
+                                reset()
+                                error="El horario ha avanzado. Calcula de nuevo."
+                            }else{
+                                submitted=true
+                                accept(preview.sessions(keepBreaks),replacing,approvedUpdates){failure->
+                                    submitted=false
+                                    if(failure!=null)error=failure
+                                }
+                            }
+                        }){Text(if(preview.deficits.isEmpty())"Guardar plan" else "Guardar plan parcial")}
+                    }
+                }
+            }
             }
         }
     }

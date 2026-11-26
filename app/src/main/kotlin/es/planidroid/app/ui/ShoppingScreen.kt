@@ -29,7 +29,7 @@ import es.planidroid.app.domain.*
 import java.time.*
 import java.time.format.DateTimeFormatter
 
-@Composable fun ShoppingScreen(shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,listId:String="",listName:String="Mi compra",back:()->Unit={},share:(()->Unit)?=null){
+@Composable fun ShoppingScreen(shopping:List<Shopping>,history:List<Purchase>,inventory:List<Item>,model:PlanidroidModel,listId:String="",listName:String="Mi compra",back:()->Unit={},share:(()->Unit)?=null,removeList:(()->Unit)?=null){
     var scan by remember(listId){mutableStateOf(false)};var quick by remember(listId){mutableStateOf("")}
     var view by remember(listId){mutableStateOf("Lista")};var edit by remember{mutableStateOf<Shopping?>(null)};var undo by remember{mutableStateOf<Purchase?>(null)}
     var selectedIds by remember(listId){mutableStateOf(emptySet<String>())};var selecting by remember(listId){mutableStateOf(false)};var confirmDelete by remember{mutableStateOf(false)}
@@ -47,10 +47,11 @@ import java.time.format.DateTimeFormatter
             if(share!=null)IconButton(onClick=share){Icon(Icons.Default.Share,"Compartir")}
             Box{IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Acciones de lista")};DropdownMenu(menu,{menu=false}){
                 DropdownMenuItem(text={Text("Añadir con detalles")},onClick={menu=false;edit=Shopping(name="",unit="",listId=listId,quantitySpecified=false)})
+                if(removeList!=null)DropdownMenuItem(text={Text("Eliminar lista",color=MaterialTheme.colorScheme.error)},onClick={menu=false;removeList()})
                 if(view!="Historial")DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;selecting=true})
             }}
         }
-        if(!selecting)ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
+        if(!selecting&&view=="Lista")ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
         if(!selecting&&view=="Lista")ShoppingAiActions({recipes=true},{shoppingAi=true})
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Lista","Rutina","Historial").forEach{v->FilterChip(view==v,{view=v;clear()},label={Text(v)})}}
         if(selecting)ShoppingSelection(selected.size,shown.size,{selectedIds=if(selected==visibleIds)emptySet()else visibleIds},::clear,{confirmDelete=true})

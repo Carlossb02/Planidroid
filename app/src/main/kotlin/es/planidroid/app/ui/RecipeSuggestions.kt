@@ -66,11 +66,13 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
     var existing by remember{mutableStateOf(emptyList<SavedRecipe>())}
     var editor by remember{mutableStateOf<SavedRecipe?>(null)};var remove by remember{mutableStateOf<SavedRecipe?>(null)}
     var scan by remember{mutableStateOf(false)};var imported by remember{mutableStateOf(emptyList<SavedRecipe>())}
-    var showSteps by remember{mutableStateOf(false)};var requested by remember{mutableStateOf("")}
+    var picking by remember{mutableStateOf(false)}
+    var showGemini by remember(dishName){mutableStateOf(false)}
+    var requested by remember{mutableStateOf("")}
     fun choose(recipe:SavedRecipe){
-        current=recipe;selected=recipe.ingredients.indices.toSet()
+        current=recipe;picking=false;selected=recipe.ingredients.indices.toSet()
         amounts=recipe.ingredients.mapIndexed{i,v->i to if(v.amount>0)amountText(v.amount)else ""}.toMap()
-        units=recipe.ingredients.mapIndexed{i,v->i to v.unit}.toMap();showSteps=false;error=""
+        units=recipe.ingredients.mapIndexed{i,v->i to v.unit}.toMap();error=""
     }
     fun generate(query:String){
         if(busy)return
@@ -97,22 +99,25 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
         if(matches.isNotEmpty())existing=matches else generate(query)
     }
     val recipe=current
+    val scroll=key(recipe?.id,picking){rememberScrollState()}
+    fun back(){when{picking->picking=false;current!=null->current=null;else->close()}}
     val matching=if(dishName.isBlank())emptyList()else RecipeBook.matches(dishName,library.recipes)
     val shown=library.recipes.filter{search.isBlank()||InventoryConsumption.fold(it.title).contains(InventoryConsumption.fold(search))}.sortedByDescending{it.updatedAt}
-    val valid=selected.all{i->amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+    val valid=selected.all{i->amounts[i].isNullOrBlank()||amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
+    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false)){
         Surface(Modifier.fillMaxSize()){
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
-                    IconButton(enabled=!busy,onClick={if(current!=null)current=null else close()}){Icon(if(recipe==null)Icons.Default.Close else Icons.Default.ArrowBack,"Volver")}
+                    IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.Default.ArrowBack,"Volver")}
                     Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else recipe.title,style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(recipe.servings>0)"Para "+recipe.servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
                     if(recipe!=null)IconButton(enabled=!busy,onClick={editor=recipe}){Icon(Icons.Default.Edit,"Editar receta")}
                     else IconButton(enabled=!busy,onClick={scan=true}){Icon(Icons.Default.CameraAlt,"Escanear recetario")}
                 }
                 HorizontalDivider()
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                     if(recipe==null){
-                        GlassCard(tint=Lilac){
+                        TextButton(enabled=!busy,onClick={showGemini=!showGemini}){Text(if(showGemini)"Ocultar Gemini" else "Buscar ideas con Gemini")}
+                        if(showGemini)GlassCard(tint=Lilac){
                             Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.AutoAwesome,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(if(dishName.isBlank())"Cocina con Gemini"else "Ingredientes de "+dishName,style=MaterialTheme.typography.titleMedium)}
                             OutlinedTextField(request,{request=it.take(1500)},Modifier.fillMaxWidth(),placeholder={Text(if(dishName.isBlank())"¿Qué quieres cocinar?"else "Preferencias (opcional)")},minLines=2,enabled=!busy,shape=RoundedCornerShape(16.dp))
                             FilledTonalButton(enabled=!busy&&(request.isNotBlank()||dishName.isNotBlank()),onClick={ask()},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Consultar Gemini")}
@@ -127,7 +132,28 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                         shown.filter{r->matching.none{it.id==r.id}}.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
                         if(imported.isNotEmpty()){
                             Text("Recetas de la foto · revisa y guarda",style=MaterialTheme.typography.titleMedium)
-                            imported.forEach{r->RecipeLibraryRow(r,{editor=r},{editor=r},{imported=imported.filterNot{it.id==r.id}})}
+                            imported.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{imported=imported.filterNot{it.id==r.id}})}
+                        }
+                    }else if(!picking){
+                        Text("Ingredientes",style=MaterialTheme.typography.titleLarge)
+                        recipe.ingredients.forEach { ingredient ->
+                            Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                                Text(ingredient.name,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
+                                val amount=listOfNotNull(ingredient.amount.takeIf{it>0}?.let(::amountText),ingredient.unit.takeIf{it.isNotBlank()}).joinToString(" ")
+                                if(amount.isNotBlank())Text(amount,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        Text("Preparación",Modifier.padding(top=12.dp),style=MaterialTheme.typography.titleLarge)
+                        if(recipe.steps.isEmpty())Text("No hay pasos guardados.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        recipe.steps.forEachIndexed { index, step ->
+                            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                                Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer){
+                                    Text((index+1).toString(),Modifier.padding(horizontal=10.dp,vertical=5.dp),
+                                        color=MaterialTheme.colorScheme.onSecondaryContainer,style=MaterialTheme.typography.labelLarge)
+                                }
+                                Text(step,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
+                            }
                         }
                     }else{
                         Row(verticalAlignment=Alignment.CenterVertically){Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);TextButton(onClick={selected=if(selected.size==recipe.ingredients.size)emptySet()else recipe.ingredients.indices.toSet()}){Text(if(selected.size==recipe.ingredients.size)"Ninguno"else "Todos")}}
@@ -139,8 +165,6 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                                 }
                             }
                         }
-                        TextButton(onClick={showSteps=!showSteps},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Restaurant,null);Spacer(Modifier.width(8.dp));Text("Preparación",Modifier.weight(1f));Icon(if(showSteps)Icons.Default.ExpandLess else Icons.Default.ExpandMore,null)}
-                        if(showSteps){if(recipe.steps.isEmpty())Text("No hay pasos guardados.");recipe.steps.forEachIndexed{i,s->Text((i+1).toString()+". "+s)}}
                     }
                     if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
@@ -150,8 +174,9 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                         if(recipe==null){
                             OutlinedButton(enabled=!busy,onClick={editor=SavedRecipe()},modifier=Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" Crear")}
                             FilledTonalButton(enabled=!busy,onClick={scan=true},modifier=Modifier.weight(1f)){Icon(Icons.Default.CameraAlt,null);Text(" Escanear")}
-                        }else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
-                            val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDouble(),unit=units[i]?:item.unit,listId=listId,quantitySpecified=true,icon=guessIcon(item.name))}
+                        }else if(!picking)Button(enabled=!busy,onClick={picking=true},modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
+                        else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
+                            val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name))}
                             add(products);close()
                         },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AddShoppingCart,null);Spacer(Modifier.width(8.dp));Text("Añadir "+selected.size+" ingredientes")}
                     }
@@ -165,7 +190,7 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
         if(model==null)done("Recetario no disponible")else model.saveRecipes(listOf(next)){failure->done(failure);if(failure==null){imported=imported.filterNot{it.id==next.id};choose(next);editor=null}}
     })}
     remove?.let{r->Confirm("Eliminar "+r.title,"Se eliminará del recetario, sin modificar listas de compra.",{remove=null},{library.model?.deleteRecipe(r.id)})}
-    if(scan)RecipePhotoImport(uid,{scan=false},{drafts->scan=false;imported=drafts;if(drafts.size==1)editor=drafts.first()})
+    if(scan)RecipePhotoImport(uid,{scan=false},{drafts->scan=false;imported=drafts})
     if(connect)PersonalGeminiDialog(uid){connect=false}
 }
 

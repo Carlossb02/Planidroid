@@ -45,19 +45,38 @@ class SharedCloud(private val context:Context){
     }
     private suspend fun remoteList():Pair<List<SharedSpace>,List<Membership>>{
         checkUser()
-        val own=spaces.whereEqualTo("ownerUid",uid).get(Source.SERVER).await().documents.map{space(it,"owner")}
+        val owned=spaces.whereEqualTo("ownerUid",uid).get(Source.SERVER).await().documents
+        val archived=owned.filter{it.getBoolean("archived")==true}.map{it.id}.toSet()
+        val own=owned.filterNot{it.id in archived || it.getString("parentId") in archived}.map{space(it,"owner")}
         val mine=members.whereEqualTo("email",email).get(Source.SERVER).await().documents.map(::membership)
         val accepted=mine.filter{it.status=="accepted"&&it.acceptedUid==uid}.mapNotNull{m->
             try{spaces.document(m.space).get(Source.SERVER).await().takeIf{it.exists()}?.let{space(it,m.role)}}
             catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:com.google.firebase.firestore.FirebaseFirestoreException){if(e.code==com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)null else throw e}
         }
         val children=accepted.filter{it.kind=="house"}.flatMap{h->
-            spaces.whereEqualTo("ownerUid",h.owner).whereEqualTo("kind","furniture").whereEqualTo("parentId",h.id).get(Source.SERVER).await().documents.map{space(it,h.role)}
+            spaces.whereEqualTo("ownerUid",h.owner).whereEqualTo("kind","furniture").whereEqualTo("parentId",h.id).get(Source.SERVER).await().documents.filterNot{it.getBoolean("archived")==true}.map{space(it,h.role)}
         }
         val rank=listOf("reader","editor","admin","owner")
         val visible=(own+accepted+children).groupBy{it.id}.values.map{it.maxBy{v->rank.indexOf(v.role)}}
         checkUser()
         cache.store(visible,mine.filter{it.status=="pending"&&it.expiresAt>System.currentTimeMillis()});return cache.visible()
+    }
+    suspend fun archive(s:SharedSpace)=flushMutex.withLock {
+        checkUser()
+        requireOnline()
+        require(s.owner==uid&&s.role=="owner"&&s.kind in setOf("house","furniture","shopping_list"))
+        val ref=spaces.document(s.id)
+        db.runTransaction { transaction ->
+            val current=transaction.get(ref)
+            check(current.exists()&&current.getString("ownerUid")==uid){"Ya no tienes acceso a este elemento."}
+            if(current.getBoolean("archived")!=true){
+                check(current.getLong("version")==s.version){"El elemento ha cambiado. Actualiza y vuelve a intentarlo."}
+                val emptyBody=if(s.kind=="furniture") """{"furniture":{"name":"","type":"OTHER"}}""" else "{}"
+                transaction.update(ref,mapOf("archived" to true,"body" to emptyBody,"version" to (s.version+1),"updatedAt" to FieldValue.serverTimestamp()))
+            }
+            Unit
+        }.await()
+        cache.removeArchived(s.id)
     }
     private fun stable(kind:String,id:String)=UUID.nameUUIDFromBytes((uid+"/"+kind+"/"+id).toByteArray(Charsets.UTF_8)).toString()
     private fun data(kind:String,title:String,body:String,sourceId:String,parentId:String="",homeName:String=""):Map<String,Any>{
@@ -71,7 +90,7 @@ class SharedCloud(private val context:Context){
         val id=stable("shopping_list",list.id);val ref=spaces.document(id)
         val payload=es.planidroid.app.domain.encode(es.planidroid.app.domain.SharedShopping(items=items.map{it.copy(itemId="",minimum=0.0,target=1.0)}))
         val value=data("shopping_list",list.name,payload,list.id)
-        db.runTransaction{tx->if(!tx.get(ref).exists())tx.set(ref,value);Unit}.await()
+        db.runTransaction{tx->val previous=tx.get(ref);check(previous.getBoolean("archived")!=true){"Esta lista compartida se ha eliminado."};if(!previous.exists())tx.set(ref,value);Unit}.await()
         return space(ref.get(Source.SERVER).await(),"owner")
     }
     suspend fun publishHome(home:es.planidroid.app.domain.Home,furniture:List<es.planidroid.app.domain.Furniture>,items:List<es.planidroid.app.domain.Item>):SharedSpace {
@@ -85,7 +104,7 @@ class SharedCloud(private val context:Context){
             ref to data("furniture",f.name,payload,f.id,id,home.name)
         }
         // Parent is created first; child security checks require an existing owner-controlled parent.
-        db.runTransaction{tx->if(!tx.get(parent).exists())tx.set(parent,homeData);Unit}.await()
+        db.runTransaction{tx->val previous=tx.get(parent);check(previous.getBoolean("archived")!=true){"Esta casa compartida se ha eliminado."};if(!previous.exists())tx.set(parent,homeData);Unit}.await()
         if(children.isNotEmpty())db.runTransaction{tx->
             val missing=children.filter{(ref,_)->!tx.get(ref).exists()}
             missing.forEach{(ref,value)->tx.set(ref,value)};Unit
@@ -94,7 +113,9 @@ class SharedCloud(private val context:Context){
     }
     suspend fun publishFurniture(home:es.planidroid.app.domain.Home,f:es.planidroid.app.domain.Furniture,items:List<es.planidroid.app.domain.Item>):SharedSpace {
         publishHome(home,listOf(f),items)
-        return space(spaces.document(stable("furniture",f.id)).get(Source.SERVER).await(),"owner")
+        val document=spaces.document(stable("furniture",f.id)).get(Source.SERVER).await()
+        check(document.exists()&&document.getBoolean("archived")!=true){"Este mueble compartido se ha eliminado."}
+        return space(document,"owner")
     }
     suspend fun addFurniture(home:SharedSpace,f:es.planidroid.app.domain.Furniture):SharedSpace {
         checkUser();requireOnline();require(home.kind=="house"&&home.role=="owner"&&home.owner==uid)
