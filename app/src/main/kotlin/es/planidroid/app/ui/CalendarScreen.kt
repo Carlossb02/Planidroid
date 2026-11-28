@@ -34,7 +34,7 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
     session.calendarTitle.isNotBlank() && session.end>session.start &&
         listOf(session.start,session.end).all{Instant.ofEpochMilli(it).atZone(zone).toLocalTime()==LocalTime.MIDNIGHT}
 
-@Composable fun CalendarScreen(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,save:(Session)->Unit,delete:(Session)->Unit,plan:()->Unit,addEvent:(LocalDate)->Unit={},importFile:()->Unit={},editEvent:(Session,Task)->Unit={_,_->},focusDay:String?=null,consumeFocus:()->Unit={}){
+@Composable fun CalendarScreen(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,save:(Session)->Unit,delete:(Session)->Unit,plan:()->Unit,addEvent:(LocalDate)->Unit={},importFile:()->Unit={},openEvent:(Session)->Unit={},focusDay:String?=null,consumeFocus:()->Unit={}){
     var dateText by rememberSaveable{mutableStateOf(LocalDate.now().toString())}
     val date=LocalDate.parse(dateText)
     val initialView=LocalViewPreferences.current.calendar
@@ -53,7 +53,7 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
     fun navigate(delta:Long){dateText=when(mode){"Semana"->date.plusWeeks(delta);"Mes"->date.plusMonths(delta);else->date.plusDays(delta)}.toString();selectedId=null}
     fun open(event:AgendaEvent){
         val task=event.task
-        if(event.session.calendarTitle.isNotBlank()&&task!=null)editEvent(event.session,task) else selectedId=event.session.id
+        if(event.session.calendarTitle.isNotBlank())openEvent(event.session) else selectedId=event.session.id
     }
     Column(Modifier.fillMaxSize().padding(horizontal=12.dp)){
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
@@ -191,7 +191,7 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
         if(day==LocalDate.now()){val elapsed=System.currentTimeMillis()-bounds.start;if(elapsed in 0 until (bounds.end-bounds.start))Box(Modifier.offset(y=hourHeight*(elapsed/3600000f)).fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.error))}
     }
 }
-@Composable private fun SessionDetails(s:Session,task:Task?,sessions:List<Session>,tasks:List<Task>,close:()->Unit,save:(Session)->Unit,delete:()->Unit,edit:(Task)->Unit){
+@Composable internal fun SessionDetails(s:Session,task:Task?,sessions:List<Session>,tasks:List<Task>,close:()->Unit,save:(Session)->Unit,delete:()->Unit,edit:(Task)->Unit){
     var date by remember(s.id){mutableStateOf(sessionDate(s.start).toString())}
     var startText by remember(s.id){mutableStateOf(time(s.start))}
     var duration by remember(s.id){mutableStateOf(((s.end-s.start)/60000).toString())}

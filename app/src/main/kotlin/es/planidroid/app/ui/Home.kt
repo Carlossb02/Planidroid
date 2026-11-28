@@ -1,72 +1,210 @@
 package es.planidroid.app.ui
-import androidx.compose.foundation.*
+
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import es.planidroid.app.domain.*
-import java.time.*
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-@Composable fun Home(tasks:List<Task>,sessions:List<Session>,edit:(Task)->Unit,capture:()->Unit,inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,spaces:()->Unit,count:Int,buyCount:Int,saveSession:(Session)->Unit,focus:()->Unit,assistant:()->Unit={},openEvent:()->Unit=calendar){
-    val today=LocalDate.now();val now=System.currentTimeMillis()
-    val todaySessions=sessions.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today}.sortedBy{it.start}
-    val day=TimelineLayout.bounds(today,ZoneId.systemDefault())
-    val work=todaySessions.filterNot{it.isBreak||it.calendarTitle.isNotBlank()};val done=work.count{it.done}
-    val eventAnchors=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
-    val active=tasks.filter{it.id !in eventAnchors&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
-    val next=todaySessions.filter{!it.done&&it.end>now}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
-        item{
-            Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",java.util.Locale("es","ES"))).replaceFirstChar{it.uppercase()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Surface(color=MaterialTheme.colorScheme.primaryContainer,contentColor=MaterialTheme.colorScheme.onPrimaryContainer,shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth().clickable(onClick=calendar)){
-                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                    Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(if(work.isEmpty()&&next.isEmpty())"Agenda despejada" else if(work.isEmpty())"Eventos de hoy" else "$done de "+work.size+" sesiones",style=MaterialTheme.typography.titleLarge);if(work.any{!it.done})Text(work.filterNot{it.done}.sumOf{(minOf(it.end,day.end)-maxOf(it.start,day.start))/60000}.toString()+" min de actividad pendientes",style=MaterialTheme.typography.bodySmall)};Icon(Icons.Default.ChevronRight,"Abrir calendario")}
-                    if(work.isNotEmpty())LinearProgressIndicator(progress={done.toFloat()/work.size},modifier=Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(8.dp)),color=MaterialTheme.colorScheme.primary,trackColor=MaterialTheme.colorScheme.surface)
+private val spanish=Locale.forLanguageTag("es-ES")
+private fun dayLabel(day:LocalDate,pattern:String="EEEE d 'de' MMMM")=
+    day.format(DateTimeFormatter.ofPattern(pattern,spanish)).replaceFirstChar{it.uppercase(spanish)}
+
+@Composable internal fun Home(
+    tasks:List<Task>,sessions:List<Session>,openEntry:(Session)->Unit,openTask:(Task)->Unit,
+    inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,buyCount:Int,
+    focus:()->Unit,assistant:()->Unit
+){
+    val today=LocalDate.now()
+    val now=System.currentTimeMillis()
+    val taskMap=tasks.associateBy{it.id}
+    val agenda=sessions.filterNot{it.isBreak}.sortedBy{it.start}
+    val upcoming=agenda.filter{!it.done&&it.end>now}.take(4)
+    val recent=agenda.filter{it.start<=now&&(it.done||it.end<=now)&&sessionDate(it.end-1)>=today.minusDays(7)}
+        .sortedByDescending{it.end}.take(4)
+    val todayEntries=agenda.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today}
+    val events=todayEntries.count{it.calendarTitle.isNotBlank()}
+    val sessionsToday=todayEntries.size-events
+    val anchors=sessions.filter{it.calendarTitle.isNotBlank()}.mapTo(mutableSetOf()){it.taskId}
+    val deadlines=tasks.filter{it.id !in anchors&&it.status !in listOf(Status.DONE,Status.ARCHIVED)&&it.due.isNotBlank()}
+        .sortedBy{it.due}.take(3)
+
+    BoxWithConstraints(Modifier.fillMaxSize()){
+        val wide=maxWidth>=740.dp
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal=if(wide)28.dp else ScreenGutter,vertical=16.dp),
+            verticalArrangement=Arrangement.spacedBy(22.dp)){
+            Surface(onClick=calendar,shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth(),
+                color=MaterialTheme.colorScheme.primaryContainer,contentColor=MaterialTheme.colorScheme.onPrimaryContainer){
+                Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                        Text(dayLabel(today),style=MaterialTheme.typography.headlineSmall)
+                        val summary=listOfNotNull(
+                            if(events>0)if(events==1)"1 evento" else "$events eventos" else null,
+                            if(sessionsToday>0)if(sessionsToday==1)"1 sesión" else "$sessionsToday sesiones" else null)
+                        Text(summary.joinToString(" · ").ifBlank{"Agenda despejada"},style=MaterialTheme.typography.bodyMedium)
+                    }
+                    Icon(Icons.Default.CalendarMonth,"Abrir calendario",Modifier.size(28.dp))
                 }
             }
-        }
-        if(next.isNotEmpty())item{Text("A continuación",style=MaterialTheme.typography.titleLarge)}
-        items(next.take(3),key={it.id}){entry->
-            val s=entry;val t=tasks.find{it.id==s.taskId}
-            val tint=if(s.isBreak)MaterialTheme.colorScheme.outline else if(s.calendarTitle.isNotBlank())Lilac else taskColor(t)
-            Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().clickable{if(s.calendarTitle.isNotBlank())openEvent() else if(t!=null&&!s.isBreak)edit(t)else calendar()}){
-                Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-                    Text(time(entry.start),style=MaterialTheme.typography.labelLarge,modifier=Modifier.width(54.dp))
-                    Box(Modifier.width(4.dp).height(34.dp).background(tint,RoundedCornerShape(3.dp)))
-                    Column(Modifier.weight(1f).padding(horizontal=12.dp)){Text(if(s.isBreak)"Descanso" else s.calendarTitle.ifBlank{t?.title?:"Sesión"},style=MaterialTheme.typography.titleMedium);Text("Hasta "+time(entry.end),style=MaterialTheme.typography.bodySmall)}
-                    if(!s.isBreak&&s.calendarTitle.isBlank())Checkbox(s.done,{saveSession(s.copy(done=it))})
+            val timeline:@Composable ()->Unit={
+                Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Text("A continuación",style=MaterialTheme.typography.titleLarge)
+                    if(upcoming.isEmpty())Text("No tienes nada programado.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    upcoming.forEach{entry->AgendaEntryCard(entry,taskMap[entry.taskId],today){openEntry(entry)}}
+                    if(recent.isNotEmpty()){
+                        Spacer(Modifier.height(6.dp))
+                        Text("Recientes",style=MaterialTheme.typography.titleLarge)
+                        recent.forEach{entry->AgendaEntryCard(entry,taskMap[entry.taskId],today){openEntry(entry)}}
+                    }
                 }
             }
+            val extras:@Composable ()->Unit={
+                Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Text("Accesos rápidos",style=MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        HomeShortcut("Compra",if(buyCount==0)"Al día" else "$buyCount pendientes",Icons.Default.ShoppingCart,Peach,Modifier.weight(1f),shopping)
+                        HomeShortcut("Hogar","Inventario",Icons.Default.Home,Mint,Modifier.weight(1f),inventory)
+                    }
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        HomeShortcut("Gemini","Asistente",Icons.Default.AutoAwesome,Lilac,Modifier.weight(1f),assistant)
+                        HomeShortcut("Concentración","Temporizador",Icons.Default.Timer,Blue,Modifier.weight(1f),focus)
+                    }
+                    if(deadlines.isNotEmpty()){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Text("Vencimientos",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
+                            TextButton(onClick=taskList){Text("Todas")}
+                        }
+                        deadlines.forEach{task->
+                            Surface(onClick={openTask(task)},shape=RoundedCornerShape(12.dp)){
+                                Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                    Text(task.title,Modifier.weight(1f),maxLines=2,overflow=TextOverflow.Ellipsis)
+                                    Text(task.due,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(wide)Row(horizontalArrangement=Arrangement.spacedBy(22.dp)){
+                Box(Modifier.weight(3f)){timeline()}
+                Box(Modifier.weight(2f)){extras()}
+            } else {
+                timeline()
+                extras()
+            }
         }
-        item{
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){HomeShortcut("Compra",if(buyCount>0)"$buyCount pendientes" else "Al día",Icons.Default.ShoppingCart,Peach,Modifier.weight(1f),shopping);HomeShortcut("Hogar","Inventario",Icons.Default.Home,Mint,Modifier.weight(1f),inventory)}
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){HomeShortcut("Gemini","Asistente",Icons.Default.AutoAwesome,Lilac,Modifier.weight(1f),assistant);HomeShortcut("Concentración","Temporizador",Icons.Default.Timer,Blue,Modifier.weight(1f),focus)}
-        }
-        if(active.any{it.due.isNotBlank()})item{Row(verticalAlignment=Alignment.CenterVertically){Text("Próximos vencimientos",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);TextButton(onClick=taskList){Text("Todas")}}}
-        items(active.filter{it.due.isNotBlank()}.sortedBy{it.due}.take(3),key={"due-"+it.id}){t->Row(Modifier.fillMaxWidth().clickable{edit(t)}.padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){Text(t.title,Modifier.weight(1f),maxLines=2);Text(t.due,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
     }
 }
-@Composable private fun HomeShortcut(title:String,detail:String,icon:ImageVector,tint:Color,modifier:Modifier,onClick:()->Unit){
-    Surface(modifier.clickable(onClick=onClick),shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.surface){
-        Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically,
-            horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            Icon(icon,null,tint=tint,modifier=Modifier.size(22.dp))
-            Column(Modifier.weight(1f)){
-                Text(title,style=MaterialTheme.typography.titleSmall)
-                Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+
+private fun entryTitle(entry:Session,task:Task?)=entry.calendarTitle.ifBlank{
+    if(entry.isBreak)"Descanso" else task?.title?:"Sesión"
+}
+
+private fun entryTime(entry:Session,today:LocalDate?=null):String{
+    val start=sessionDate(entry.start)
+    val allDay=isAllDayEvent(entry)
+    val end=sessionDate(entry.end-if(allDay)1 else 0)
+    val date=when(start){
+        today->"Hoy"
+        today?.minusDays(1)->"Ayer"
+        else->dayLabel(start,if(today!=null)"EEE d MMM" else "EEEE d 'de' MMMM")
+    }
+    val startTime=time(entry.start)
+    val endTime=time(entry.end)
+    val endDate=dayLabel(end)
+    return when{
+        allDay&&start==end->"$date · Todo el día"
+        allDay->"$date – $endDate · Todo el día"
+        start==end->"$date · $startTime–$endTime"
+        else->"$date, $startTime – $endDate, $endTime"
+    }
+}
+
+@Composable internal fun AgendaEntryCard(entry:Session,task:Task?,today:LocalDate,open:()->Unit){
+    val fixed=entry.calendarTitle.isNotBlank()
+    val tint=if(fixed)MaterialTheme.colorScheme.tertiary else taskColor(task)
+    Surface(onClick=open,shape=RoundedCornerShape(16.dp),modifier=Modifier.fillMaxWidth()){
+        Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            Surface(shape=RoundedCornerShape(12.dp),color=soft(tint,.16f)){
+                Icon(if(fixed)Icons.Default.Event else if(entry.done)Icons.Default.CheckCircle else Icons.Default.Schedule,
+                    null,Modifier.padding(10.dp).size(22.dp),tint=tint)
             }
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)){
+                Text(entryTitle(entry,task),style=MaterialTheme.typography.titleMedium)
+                Text(entryTime(entry,today),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                val preview=if(fixed)task?.goal?.ifBlank{task.description} else task?.description
+                if(!preview.isNullOrBlank())Text(preview,style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            }
+            Icon(Icons.Default.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable internal fun AgendaEntryDetails(entry:Session,task:Task?,close:()->Unit,onEdit:()->Unit,onDone:(Boolean)->Unit){
+    val fixed=entry.calendarTitle.isNotBlank()
+    Dialog(onDismissRequest=close){
+        Surface(shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(16.dp)){
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    IconButton(onClick=close){Icon(Icons.Default.Close,"Cerrar detalles")}
+                    Text(if(fixed)"Evento" else if(entry.isBreak)"Descanso" else "Sesión",
+                        modifier=Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
+                    if(!fixed||task!=null)IconButton(onClick=onEdit){
+                        Icon(Icons.Default.Edit,if(fixed)"Editar evento" else "Editar sesión")
+                    }
+                }
+                Column(Modifier.weight(1f,fill=false).verticalScroll(rememberScrollState()).padding(8.dp),
+                    verticalArrangement=Arrangement.spacedBy(14.dp)){
+                    Text(entryTitle(entry,task),style=MaterialTheme.typography.headlineSmall)
+                    DetailLine(Icons.Default.Schedule,entryTime(entry))
+                    if(fixed&&task!=null){
+                        if(task.goal.isNotBlank())DetailLine(Icons.Default.LocationOn,task.goal)
+                        if(task.reminder)DetailLine(Icons.Default.Notifications,"Recordatorio activado")
+                        DetailLine(Icons.Default.EventAvailable,
+                            if(OverlapPolicy.calendarFree(entry,task))"Disponible durante este evento" else "Tiempo reservado")
+                    }
+                    task?.description?.takeIf{it.isNotBlank()}?.let{description->
+                        Text("Notas",style=MaterialTheme.typography.titleMedium)
+                        Text(description)
+                    }
+                    if(!fixed&&!entry.isBreak)FilledTonalButton(onClick={onDone(!entry.done)}){
+                        Text(if(entry.done)"Marcar como pendiente" else "Marcar como hecha")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun DetailLine(icon:ImageVector,text:String){
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
+        Icon(icon,null,tint=MaterialTheme.colorScheme.primary)
+        Text(text,style=MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable private fun HomeShortcut(title:String,detail:String,icon:ImageVector,tint:Color,modifier:Modifier,onClick:()->Unit){
+    Surface(onClick=onClick,modifier=modifier,shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            Icon(icon,null,tint=tint)
+            Text(title,style=MaterialTheme.typography.titleSmall)
+            Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -367,7 +367,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
                 IconButton(onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones del mueble")}
                 DropdownMenu(actions,{actions=false}){
                     DropdownMenuItem(text={Text("Editar mueble")},enabled=!access.busy,onClick={actions=false;editFurniture=true})
-                    DropdownMenuItem(text={Text("Editar distribución")},enabled=!access.busy,onClick={actions=false;layout=true})
+                    DropdownMenuItem(text={Text("Organizar compartimentos")},enabled=!access.busy,onClick={actions=false;layout=true})
                     if(s.role=="owner")DropdownMenuItem(text={Text("Compartir")},onClick={actions=false;invite()})
                     if(s.role=="owner")DropdownMenuItem(text={Text("Eliminar mueble",color=MaterialTheme.colorScheme.error)},enabled=!access.busy,onClick={actions=false;removeFurniture()})
                 }
@@ -378,7 +378,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         ActionFlow {
             FilterChip(visual,{visual=!visual;selected=null},label={Text("Plano")})
             if(data.items.any(::usablePantryItem))TextButton(onClick={inspect=true}){Text("Ideas con Gemini")}
-            if(write)FilledTonalIconButton(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=selected?:f.compartments.firstOrNull()?:"General")}){
+            if(write)FilledTonalIconButton(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=selected?:f.compartments.firstOrNull()?:UnassignedCompartment)}){
                 Icon(Icons.Outlined.Add,"Añadir contenido")
             }
         }
@@ -406,6 +406,13 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         update(data.copy(items=data.items.filterNot{it.id==item.id}))
     }}
     if(inspect)InventoryIdeas(uid,s.title,data.items){inspect=false}
-    if(layout)LayoutEditor(f,data.items,{layout=false},{update(data.copy(furniture=it));layout=false})
+    if(layout)LayoutEditor(f,data.items,{layout=false}){change,done->
+        access.work(refresh=false,finished={failure->if(failure==null)selected=null;done(failure)}){api->
+            val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible")
+            val current=decode<SharedFurniture>(latest.body)
+            val furniture=change.furniture(current.furniture)
+            api.update(latest,furniture.name,encode(current.copy(furniture=furniture,items=current.items.map(change::item))))
+        }
+    }
     edit?.let{i->ItemEditor(i,f,{edit=null},{v->update(data.copy(items=if(data.items.any{it.id==v.id})data.items.map{if(it.id==v.id)v.copy(restockAmount=if(v.amount>0)0.0 else v.restockAmount) else it}else data.items+v));edit=null})}
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -105,110 +106,112 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
         if(matches.isNotEmpty())existing=matches else generate(query)
     }
     val recipe=current
-    val scroll=key(recipe?.id,picking){rememberScrollState()}
     fun back(){when{picking->picking=false;current!=null->current=null;else->close()}}
     val matching=if(dishName.isBlank())emptyList()else RecipeBook.matches(dishName,library.recipes)
     val shown=library.recipes.filter{search.isBlank()||InventoryConsumption.fold(it.title).contains(InventoryConsumption.fold(search))}.sortedByDescending{it.updatedAt}
     val valid=selected.all{i->amounts[i].isNullOrBlank()||amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
-        Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
-                Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
-                    IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.Default.ArrowBack,"Volver")}
-                    Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else recipe.title,style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(servings>0)"Para "+servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
-                    if(recipe!=null)IconButton(enabled=!busy,onClick={editor=recipe}){Icon(Icons.Default.Edit,"Editar receta")}
+    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+        Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
+            Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=Alignment.TopCenter){
+                Column(Modifier.widthIn(max=760.dp).fillMaxSize()){
+                    Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
+                        IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
+                        Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else if(picking)"Ingredientes para la compra" else "Receta",style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(servings>0)"Para "+servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
+                        if(recipe!=null)IconButton(enabled=!busy,onClick={editor=recipe}){Icon(Icons.Default.Edit,"Editar receta")}
 
-                }
-                HorizontalDivider()
-                Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-                    if(recipe==null){
-                        TextButton(enabled=!busy,onClick={showGemini=!showGemini}){Text(if(showGemini)"Ocultar Gemini" else "Buscar ideas con Gemini")}
-                        if(showGemini)GlassCard(tint=Lilac){
-                            Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.AutoAwesome,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(if(dishName.isBlank())"Cocina con Gemini"else "Ingredientes de "+dishName,style=MaterialTheme.typography.titleMedium)}
-                            OutlinedTextField(request,{request=it.take(1500)},Modifier.fillMaxWidth(),placeholder={Text(if(dishName.isBlank())"¿Qué quieres cocinar?"else "Preferencias (opcional)")},minLines=2,enabled=!busy,shape=RoundedCornerShape(16.dp))
-                            FilledTonalButton(enabled=!busy&&(request.isNotBlank()||dishName.isNotBlank()),onClick={ask()},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Consultar Gemini")}
-                        }
-                        if(matching.isNotEmpty()){
-                            Text("Ya tienes estas recetas",style=MaterialTheme.typography.titleMedium)
-                            matching.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
-                        }
-                        Row(verticalAlignment=Alignment.CenterVertically){Text("Recetario",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)}
-                        if(library.recipes.isNotEmpty())OutlinedTextField(search,{search=it.take(180)},Modifier.fillMaxWidth(),placeholder={Text("Buscar receta")},singleLine=true,leadingIcon={Icon(Icons.Default.Search,null)},shape=RoundedCornerShape(16.dp))
-                        if(shown.isEmpty())Text(if(library.recipes.isEmpty())"Guarda tus recetas o escanea una foto." else "No hay recetas que coincidan.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        shown.filter{r->matching.none{it.id==r.id}}.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
-                        if(imported.isNotEmpty()){
-                            Text("Recetas de la foto · revisa y guarda",style=MaterialTheme.typography.titleMedium)
-                            imported.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{imported=imported.filterNot{it.id==r.id}})}
-                        }
-                    }else if(!picking){
-                        Row(verticalAlignment=Alignment.CenterVertically){
-                            Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
-                            if(recipe.servings>0&&!cooking){
-                                IconButton(enabled=servings>1&&!busy,onClick={servings--}){Icon(Icons.Default.Remove,"Reducir raciones")}
-                                Text(servings.toString(),style=MaterialTheme.typography.labelLarge)
-                                IconButton(enabled=servings<100&&!busy,onClick={servings++}){Icon(Icons.Default.Add,"Aumentar raciones")}
-                            }
-                        }
-                        recipe.ingredients.forEach { ingredient ->
-                            Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                                Text(ingredient.name,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
-                                val amount=listOfNotNull(RecipeBook.scaleAmount(ingredient.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText),ingredient.unit.takeIf{it.isNotBlank()}).joinToString(" ")
-                                if(amount.isNotBlank())Text(amount,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                        }
-                        Row(Modifier.padding(top=12.dp),verticalAlignment=Alignment.CenterVertically){
-                            Text("Preparación",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
-                            if(recipe.steps.isNotEmpty())TextButton(onClick={cooking=!cooking}){Text(if(cooking)"Salir" else "Cocinar")}
-                        }
-                        if(cooking&&recipe.steps.isNotEmpty()){
-                            val progress by androidx.compose.animation.core.animateFloatAsState(
-                                checkedSteps.size.toFloat()/recipe.steps.size,label="Progreso de receta")
-                            LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
-                            Text(checkedSteps.size.toString()+" de "+recipe.steps.size+" pasos",style=MaterialTheme.typography.labelMedium)
-                        }
-                        if(recipe.steps.isEmpty())Text("No hay pasos guardados.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        recipe.steps.forEachIndexed { index, step ->
-                            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                                if(cooking)Checkbox(index in checkedSteps,{checked->
-                                    checkedSteps=if(checked)checkedSteps+index else checkedSteps-index
-                                },modifier=Modifier.semantics{contentDescription="Completado, paso "+(index+1)})
-                                else Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer){
-                                    Text((index+1).toString(),Modifier.padding(horizontal=10.dp,vertical=5.dp),
-                                        color=MaterialTheme.colorScheme.onSecondaryContainer,style=MaterialTheme.typography.labelLarge)
+                    }
+                    HorizontalDivider()
+                    key(recipe?.id,picking){
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                            if(recipe==null){
+                                RecipeLibraryActions(!busy,{editor=SavedRecipe()},{scan=true})
+                                TextButton(enabled=!busy,onClick={showGemini=!showGemini}){Text(if(showGemini)"Ocultar Gemini" else "Buscar ideas con Gemini")}
+                                if(showGemini)GlassCard(tint=Lilac){
+                                    Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.AutoAwesome,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(if(dishName.isBlank())"Cocina con Gemini"else "Ingredientes de "+dishName,style=MaterialTheme.typography.titleMedium)}
+                                    OutlinedTextField(request,{request=it.take(1500)},Modifier.fillMaxWidth(),placeholder={Text(if(dishName.isBlank())"¿Qué quieres cocinar?"else "Preferencias (opcional)")},minLines=2,enabled=!busy,shape=RoundedCornerShape(16.dp))
+                                    FilledTonalButton(enabled=!busy&&(request.isNotBlank()||dishName.isNotBlank()),onClick={ask()},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text("Consultar Gemini")}
                                 }
-                                Text(step,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
-                            }
-                        }
-                    }else{
-                        Row(verticalAlignment=Alignment.CenterVertically){Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);TextButton(onClick={selected=if(selected.size==recipe.ingredients.size)emptySet()else recipe.ingredients.indices.toSet()}){Text(if(selected.size==recipe.ingredients.size)"Ninguno"else "Todos")}}
-                        recipe.ingredients.forEachIndexed{i,item->
-                            Surface(shape=RoundedCornerShape(14.dp),color=if(i in selected)soft(Mint,.12f)else MaterialTheme.colorScheme.surface){
-                                Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                                    Row(verticalAlignment=Alignment.CenterVertically){Checkbox(i in selected,{v->selected=if(v)selected+i else selected-i},enabled=!busy);ProductGlyph(item.name,Modifier.size(25.dp));Column(Modifier.weight(1f).padding(start=8.dp)){Text(item.name,style=MaterialTheme.typography.titleMedium);if(ingredients.any{InventoryConsumption.fold(it.name)==InventoryConsumption.fold(item.name)})Text("Ya en tu lista",style=MaterialTheme.typography.labelSmall)}}
-                                    if(i in selected)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(amounts[i].orEmpty(),{v->amounts=amounts+(i to v.take(16))},"Cantidad")};Column(Modifier.weight(1f)){UnitSelector(units[i]?:item.unit,{v->units=units+(i to v)})}}
+                                if(matching.isNotEmpty()){
+                                    Text("Ya tienes estas recetas",style=MaterialTheme.typography.titleMedium)
+                                    matching.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
+                                }
+                                Row(verticalAlignment=Alignment.CenterVertically){Text("Recetario",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)}
+                                if(library.recipes.isNotEmpty())OutlinedTextField(search,{search=it.take(180)},Modifier.fillMaxWidth(),placeholder={Text("Buscar receta")},singleLine=true,leadingIcon={Icon(Icons.Default.Search,null)},shape=RoundedCornerShape(16.dp))
+                                if(shown.isEmpty())Text(if(library.recipes.isEmpty())"Guarda tus recetas o escanea una foto." else "No hay recetas que coincidan.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                shown.filter{r->matching.none{it.id==r.id}}.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{remove=r})}
+                                if(imported.isNotEmpty()){
+                                    Text("Recetas de la foto · revisa y guarda",style=MaterialTheme.typography.titleMedium)
+                                    imported.forEach{r->RecipeLibraryRow(r,{choose(r)},{editor=r},{imported=imported.filterNot{it.id==r.id}})}
+                                }
+                            }else if(!picking){
+                                GlassCard(tint=Mint){Text(recipe.title,style=MaterialTheme.typography.headlineMedium)}
+                                Row(verticalAlignment=Alignment.CenterVertically){
+                                    Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                                    if(recipe.servings>0&&!cooking){
+                                        IconButton(enabled=servings>1&&!busy,onClick={servings--}){Icon(Icons.Default.Remove,"Reducir raciones")}
+                                        Text(servings.toString(),style=MaterialTheme.typography.labelLarge)
+                                        IconButton(enabled=servings<100&&!busy,onClick={servings++}){Icon(Icons.Default.Add,"Aumentar raciones")}
+                                    }
+                                }
+                                recipe.ingredients.forEach { ingredient ->
+                                    Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                                        Text(ingredient.name,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
+                                        val amount=listOfNotNull(RecipeBook.scaleAmount(ingredient.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText),ingredient.unit.takeIf{it.isNotBlank()}).joinToString(" ")
+                                        if(amount.isNotBlank())Text(amount,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+                                }
+                                Row(Modifier.padding(top=12.dp),verticalAlignment=Alignment.CenterVertically){
+                                    Text("Preparación",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                                    if(recipe.steps.isNotEmpty())TextButton(onClick={cooking=!cooking}){Text(if(cooking)"Salir" else "Cocinar")}
+                                }
+                                if(cooking&&recipe.steps.isNotEmpty()){
+                                    val progress by androidx.compose.animation.core.animateFloatAsState(
+                                        checkedSteps.size.toFloat()/recipe.steps.size,label="Progreso de receta")
+                                    LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
+                                    Text(checkedSteps.size.toString()+" de "+recipe.steps.size+" pasos",style=MaterialTheme.typography.labelMedium)
+                                }
+                                if(recipe.steps.isEmpty())Text("No hay pasos guardados.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                recipe.steps.forEachIndexed { index, step ->
+                                    Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                                        if(cooking)Checkbox(index in checkedSteps,{checked->
+                                            checkedSteps=if(checked)checkedSteps+index else checkedSteps-index
+                                        },modifier=Modifier.semantics{contentDescription="Completado, paso "+(index+1)})
+                                        else Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer){
+                                            Text((index+1).toString(),Modifier.padding(horizontal=10.dp,vertical=5.dp),
+                                                color=MaterialTheme.colorScheme.onSecondaryContainer,style=MaterialTheme.typography.labelLarge)
+                                        }
+                                        Text(step,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
+                                    }
+                                }
+                            }else{
+                                Row(verticalAlignment=Alignment.CenterVertically){Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);TextButton(onClick={selected=if(selected.size==recipe.ingredients.size)emptySet()else recipe.ingredients.indices.toSet()}){Text(if(selected.size==recipe.ingredients.size)"Ninguno"else "Todos")}}
+                                recipe.ingredients.forEachIndexed{i,item->
+                                    Surface(shape=RoundedCornerShape(14.dp),color=if(i in selected)soft(Mint,.12f)else MaterialTheme.colorScheme.surface){
+                                        Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(i in selected,{v->selected=if(v)selected+i else selected-i},enabled=!busy);ProductGlyph(item.name,Modifier.size(25.dp));Column(Modifier.weight(1f).padding(start=8.dp)){Text(item.name,style=MaterialTheme.typography.titleMedium);if(ingredients.any{InventoryConsumption.fold(it.name)==InventoryConsumption.fold(item.name)})Text("Ya en tu lista",style=MaterialTheme.typography.labelSmall)}}
+                                            if(i in selected)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(amounts[i].orEmpty(),{v->amounts=amounts+(i to v.take(16))},"Cantidad")};Column(Modifier.weight(1f)){UnitSelector(units[i]?:item.unit,{v->units=units+(i to v)})}}
+                                        }
+                                    }
                                 }
                             }
+                            if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+                            if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
                         }
                     }
-                    if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-                }
-                Surface(tonalElevation=2.dp){
-                    Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        if(recipe==null){
-                            OutlinedButton(enabled=!busy,onClick={editor=SavedRecipe()},modifier=Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" Crear")}
-                            FilledTonalButton(enabled=!busy,onClick={scan=true},modifier=Modifier.weight(1f)){Icon(Icons.Default.CameraAlt,null);Text(" Escanear")}
-                        }else if(!picking)Button(enabled=!busy,onClick={
-                            amounts=recipe.ingredients.mapIndexed{i,item->
-                                i to RecipeBook.scaleAmount(item.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText).orEmpty()
-                            }.toMap()
-                            picking=true
-                        },modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
-                        else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
-                            val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name))}
-                            add(products);close()
-                        },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AddShoppingCart,null);Spacer(Modifier.width(8.dp));Text("Añadir "+selected.size+" ingredientes")}
+                    if(recipe!=null)Surface(tonalElevation=2.dp){
+                        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp)){
+                            if(!picking)Button(enabled=!busy,onClick={
+                                amounts=recipe.ingredients.mapIndexed{i,item->
+                                    i to RecipeBook.scaleAmount(item.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText).orEmpty()
+                                }.toMap()
+                                picking=true
+                            },modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
+                            else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
+                                val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name))}
+                                add(products);close()
+                            },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AddShoppingCart,null);Spacer(Modifier.width(8.dp));Text("Añadir "+selected.size+" ingredientes")}
+                        }
                     }
                 }
             }
@@ -224,13 +227,42 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
     if(connect)PersonalGeminiDialog(uid){connect=false}
 }
 
+@Composable internal fun RecipeLibraryActions(enabled:Boolean,create:()->Unit,scan:()->Unit){
+    ActionFlow {
+        Button(enabled=enabled,onClick=create){
+            Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text("Crear receta")
+        }
+        FilledTonalButton(enabled=enabled,onClick=scan){
+            Icon(Icons.Default.CameraAlt,null);Spacer(Modifier.width(8.dp));Text("Escanear receta")
+        }
+    }
+}
+
 @Composable private fun RecipeLibraryRow(recipe:SavedRecipe,open:()->Unit,edit:()->Unit,remove:()->Unit){
     var menu by remember(recipe.id){mutableStateOf(false)}
-    Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().clickable(onClick=open)){
-        Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-            Box(Modifier.size(44.dp).background(soft(Mint,.2f),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){Icon(Icons.Default.Restaurant,null,tint=MaterialTheme.colorScheme.primary)}
-            Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(recipe.title,style=MaterialTheme.typography.titleMedium);Text(recipe.ingredients.size.toString()+" ingredientes"+(if(recipe.servings>0)" · "+recipe.servings+" raciones"else ""),style=MaterialTheme.typography.labelSmall);Text(when(recipe.source){"gemini"->"Gemini";"photo"->"Recetario escaneado";else->"Receta propia"},style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            Box{IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Opciones de "+recipe.title)};DropdownMenu(menu,{menu=false}){DropdownMenuItem(text={Text("Editar")},onClick={menu=false;edit()});DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={menu=false;remove()})}}
+    Surface(shape=RoundedCornerShape(16.dp),modifier=Modifier.fillMaxWidth()){
+        Row(Modifier.padding(end=4.dp),verticalAlignment=Alignment.CenterVertically){
+            Row(Modifier.weight(1f).clickable(role=androidx.compose.ui.semantics.Role.Button,onClick=open).padding(12.dp),
+                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                Box(Modifier.size(42.dp).background(soft(Mint,.18f),RoundedCornerShape(12.dp)),contentAlignment=Alignment.Center){
+                    Icon(Icons.Default.Restaurant,null,tint=MaterialTheme.colorScheme.primary)
+                }
+                Column(Modifier.weight(1f)){
+                    Text(recipe.title,style=MaterialTheme.typography.titleMedium)
+                    val portions=if(recipe.servings>0)" · "+recipe.servings+" raciones" else ""
+                    Text(recipe.ingredients.size.toString()+" ingredientes"+portions,style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Box{
+                IconButton(onClick={menu=true}){Icon(Icons.Default.MoreVert,"Opciones de "+recipe.title)}
+                DropdownMenu(menu,{menu=false}){
+                    DropdownMenuItem(text={Text("Ver receta")},onClick={menu=false;open()})
+                    DropdownMenuItem(text={Text("Editar")},onClick={menu=false;edit()})
+                    DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={menu=false;remove()})
+                }
+            }
         }
     }
 }

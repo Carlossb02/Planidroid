@@ -129,7 +129,7 @@ import es.planidroid.app.domain.*
 ){
     var targetId by remember(item.id){mutableStateOf(destinations.firstOrNull()?.id.orEmpty())}
     val target=destinations.find{it.id==targetId}
-    val zones=target?.compartments?.ifEmpty{listOf("General")}.orEmpty()
+    val zones=target?.compartments?.ifEmpty{listOf(UnassignedCompartment)}.orEmpty()
     var zone by remember(targetId){mutableStateOf(zones.firstOrNull().orEmpty())}
     var busy by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}

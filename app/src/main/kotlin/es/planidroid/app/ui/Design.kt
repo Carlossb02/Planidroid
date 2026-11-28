@@ -28,12 +28,12 @@ fun taskColor(task:Task?):Color {
     return taskPalette[Math.floorMod(identity.hashCode(),taskPalette.size)]
 }
 
-internal val ScreenWidth=760.dp
+internal val TabletNavigationWidth=840.dp
 internal val ScreenGutter=16.dp
 
 @Composable internal fun WindowFrame(content:@Composable ()->Unit){
-    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=androidx.compose.ui.Alignment.TopCenter){
-        Box(Modifier.widthIn(max=ScreenWidth).fillMaxSize()){content()}
+    Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
+        Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){content()}
     }
 }
 
