@@ -52,27 +52,49 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
     fun choose(d:LocalDate){dateText=d.toString();mode="Día";selectedId=null}
     fun navigate(delta:Long){dateText=when(mode){"Semana"->date.plusWeeks(delta);"Mes"->date.plusMonths(delta);else->date.plusDays(delta)}.toString();selectedId=null}
     fun open(event:AgendaEvent){
-        val task=event.task
         if(event.session.calendarTitle.isNotBlank())openEvent(event.session) else selectedId=event.session.id
     }
+    val eventAnchors=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
+    val due=tasks.filter{it.id !in eventAnchors&&it.due==date.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+    var openDue by remember(date){mutableStateOf(false)}
+    var actions by remember{mutableStateOf(false)}
+    val modes=listOf("Día","Semana","Mes","Agenda")
+    BoxWithConstraints(Modifier.fillMaxSize()){
+    val compactHeight=maxHeight<340.dp
     Column(Modifier.fillMaxSize().padding(horizontal=12.dp)){
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
             Text(monthLabel(date),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
             IconButton(onClick={navigate(-1)}){Icon(Icons.Default.ChevronLeft,"Anterior")}
             IconButton(onClick={navigate(1)}){Icon(Icons.Default.ChevronRight,"Siguiente")}
-            TextButton(onClick={dateText=LocalDate.now().toString()}){Text("Hoy")}
+            if(compactHeight){
+                Box{
+                    IconButton(onClick={actions=true}){Icon(Icons.Default.MoreVert,"Opciones del calendario")}
+                    DropdownMenu(actions,{actions=false}){
+                        DropdownMenuItem(text={Text("Hoy")},onClick={actions=false;dateText=LocalDate.now().toString()})
+                        modes.forEach{view->
+                            DropdownMenuItem(text={Text(view)},onClick={actions=false;mode=view},
+                                leadingIcon=if(mode==view)({Icon(Icons.Default.Check,null)})else null)
+                        }
+                        HorizontalDivider()
+                        DropdownMenuItem(text={Text("Nuevo evento")},onClick={actions=false;addEvent(date)})
+                        DropdownMenuItem(text={Text("Planificar")},onClick={actions=false;plan()})
+                        DropdownMenuItem(text={Text("Importar archivo de calendario")},onClick={actions=false;importFile()})
+                        if(due.isNotEmpty())DropdownMenuItem(text={Text("Vencimientos")},onClick={actions=false;openDue=true})
+                    }
+                }
+            }else TextButton(onClick={dateText=LocalDate.now().toString()}){Text("Hoy")}
         }
-        ActionFlow {
-            listOf("Día","Semana","Mes","Agenda").forEach{v->FilterChip(selected=mode==v,onClick={mode=v},label={Text(v)})}
+        if(!compactHeight){
+            ActionFlow{modes.forEach{view->FilterChip(selected=mode==view,onClick={mode=view},label={Text(view)})}}
+            ActionFlow{
+                OutlinedButton(onClick={addEvent(date)}){Text("Nuevo evento")}
+                FilledTonalButton(onClick=plan){Text("Planificar")}
+                IconButton(onClick=importFile){Icon(Icons.Default.FileOpen,"Importar archivo de calendario")}
+            }
+            if(due.isNotEmpty())TextButton(onClick={openDue=true}){
+                Text(due.size.toString()+" vencimientos · "+dayLabel(date))
+            }
         }
-        ActionFlow {
-            OutlinedButton(onClick={addEvent(date)}){Text("Nuevo evento")}
-            FilledTonalButton(onClick=plan){Text("Planificar")}
-            IconButton(onClick=importFile){Icon(Icons.Default.FileOpen,"Importar archivo de calendario")}
-        }
-        val eventAnchors=sessions.filter{it.calendarTitle.isNotBlank()}.map{it.taskId}.toSet()
-        val due=tasks.filter{it.id !in eventAnchors&&it.due==date.toString()&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
-        if(due.isNotEmpty()){var openDue by remember(date){mutableStateOf(false)};TextButton(onClick={openDue=true}){Text(due.size.toString()+" vencimientos · "+dayLabel(date))};if(openDue)AlertDialog(onDismissRequest={openDue=false},title={Text("Vencimientos")},text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){due.forEach{t->TextButton(onClick={openDue=false;edit(t)}){Text(t.title)}}}},confirmButton={TextButton(onClick={openDue=false}){Text("Cerrar")}})}
         when(mode){
             "Mes"->Column(Modifier.weight(1f).verticalScroll(rememberScrollState())){
                 val first=date.withDayOfMonth(1);val offset=first.dayOfWeek.value-1
@@ -116,7 +138,7 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
                     val bounds=TimelineLayout.bounds(day,zone)
                     it.start<bounds.end&&it.end>bounds.start
                 }}
-                if(allDay.isNotEmpty())Box(Modifier.fillMaxWidth().heightIn(max=100.dp).verticalScroll(rememberScrollState())){
+                if(allDay.isNotEmpty())Box(Modifier.fillMaxWidth().heightIn(max=if(compactHeight)52.dp else 100.dp).verticalScroll(rememberScrollState())){
                     ActionFlow {
                         allDay.forEach{event->AssistChip(onClick={open(event)},label={Text(event.title,maxLines=1,overflow=TextOverflow.Ellipsis)},
                             leadingIcon={Icon(Icons.Default.Today,null,Modifier.size(16.dp))})}
@@ -126,6 +148,11 @@ internal fun isAllDayEvent(session:Session,zone:ZoneId=ZoneId.systemDefault()):B
             }
         }
     }
+    }
+    if(openDue)AlertDialog(onDismissRequest={openDue=false},title={Text("Vencimientos")},
+        text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){
+            due.forEach{task->TextButton(onClick={openDue=false;edit(task)}){Text(task.title)}}
+        }},confirmButton={TextButton(onClick={openDue=false}){Text("Cerrar")}})
     selected?.let{s->SessionDetails(s,taskMap[s.taskId],sessions,tasks,{selectedId=null},{v->save(v);selectedId=null},{delete(s);selectedId=null},{t->selectedId=null;edit(t)})}
 }
 @Composable private fun eventBackground(e:AgendaEvent)=if(e.session.isBreak==true)MaterialTheme.colorScheme.surfaceVariant else soft(if(e.session.calendarTitle.isNotBlank())Lilac else taskColor(e.task),if(e.session.done==true).13f else .34f)

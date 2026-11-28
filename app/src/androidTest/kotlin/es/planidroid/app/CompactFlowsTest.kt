@@ -14,7 +14,7 @@ import es.planidroid.app.domain.Item
 import es.planidroid.app.domain.ShoppingList
 import es.planidroid.app.domain.Zone
 import es.planidroid.app.ui.ActionFlow
-import es.planidroid.app.ui.FurnitureSectionHeader
+import es.planidroid.app.ui.FurnitureCompartment
 import es.planidroid.app.ui.furnitureSections
 import es.planidroid.app.ui.PlanidroidTheme
 import es.planidroid.app.ui.ReviewAssistantShopping
@@ -67,14 +67,23 @@ class CompactFlowsTest {
         compose.setContent {
             PlanidroidTheme("Oscuro",false) {
                 Column(Modifier.width(230.dp)){
-                    sections.forEach{FurnitureSectionHeader(it)}
+                    sections.forEach{section->FurnitureCompartment(section){Text(it.name)}}
                 }
             }
         }
         compose.onNodeWithText("Balda").assertIsDisplayed()
-        compose.onNodeWithText("Interior · Vacío").assertIsDisplayed()
+        compose.onNodeWithText("Interior · 0 productos").assertIsDisplayed()
+        compose.onNodeWithText("Compartimento vacío").assertIsDisplayed()
         compose.onNodeWithText("Botellas").assertIsDisplayed()
         compose.onNodeWithText("Puerta · 1 producto").assertIsDisplayed()
+        val bottles=compose.onNodeWithTag("compartment:Botellas").getUnclippedBoundsInRoot()
+        val juice=compose.onNode(hasText("Zumo") and hasAnyAncestor(hasTestTag("compartment:Botellas")))
+            .assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(juice.top>bottles.top && juice.bottom<=bottles.bottom && juice.left>bottles.left)
+        compose.onNodeWithText("Botellas").performClick()
+        compose.onNodeWithText("Zumo").assertDoesNotExist()
+        compose.onNodeWithText("Botellas").performClick()
+        compose.onNodeWithText("Zumo").assertIsDisplayed()
         assertEquals(listOf("Balda","Botellas"),sections.map{it.name})
     }
 

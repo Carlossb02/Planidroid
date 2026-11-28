@@ -37,6 +37,19 @@ class ReadAndOrganizeTest {
         Box(Modifier.fillMaxSize().testTag("window")){body()}
     }
 
+    @Test fun taskActionsCanBeReachedAndSaveAValidDraft(){
+        var saved:Task?=null
+        compose.setContent{
+            PlanidroidTheme("Claro",false){
+                TaskEditor(Task(title="Preparar informe"),emptyList(),{},{saved=it},{},{},{})
+            }
+        }
+        compose.onNode(hasScrollAction() and hasAnyAncestor(isDialog()))
+            .performScrollToNode(hasText("Guardar",substring=false))
+        compose.onNodeWithText("Guardar").assertIsDisplayed().performClick()
+        compose.runOnIdle{assertEquals("Preparar informe",saved?.title)}
+    }
+
     @Test fun recentEventOpensDetailsBeforeEditing() {
         val task=Task(title="Consulta",goal="Centro de salud",description="Llevar documentación")
         val now=System.currentTimeMillis()
@@ -99,11 +112,11 @@ class ReadAndOrganizeTest {
         }
         compose.onNodeWithText("Crear receta").assertIsDisplayed()
         compose.onNodeWithText("Escanear receta").assertIsDisplayed()
-        compose.onNodeWithText(recipe.title).performClick()
+        compose.onNodeWithText(recipe.title).performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Número de personas").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Aumentar número de personas").performClick()
         compose.onNodeWithText("3 ud").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Tomate",substring=false).assertIsDisplayed()
+        compose.onNodeWithText("Tomate",substring=false).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(recipe.steps.last()).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Editar receta").assertIsDisplayed()
         compose.onNodeWithText("Guardar receta").assertDoesNotExist()
@@ -111,7 +124,7 @@ class ReadAndOrganizeTest {
         compose.onNodeWithText("Añadir 1 ingrediente").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Volver").performClick()
         compose.onNodeWithContentDescription("Volver").performClick()
-        compose.onNodeWithText("Buscar receta").assertIsDisplayed()
+        compose.onNodeWithText("Buscar receta").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun recipeActionsWrapAtCompactWidth() {

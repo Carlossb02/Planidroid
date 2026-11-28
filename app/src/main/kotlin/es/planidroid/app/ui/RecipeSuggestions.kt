@@ -13,8 +13,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -110,9 +108,9 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
     val matching=if(dishName.isBlank())emptyList()else RecipeBook.matches(dishName,library.recipes)
     val shown=library.recipes.filter{search.isBlank()||InventoryConsumption.fold(it.title).contains(InventoryConsumption.fold(search))}.sortedByDescending{it.updatedAt}
     val valid=selected.all{i->amounts[i].isNullOrBlank()||amounts[i]?.replace(',','.')?.toDoubleOrNull()?.let{it.isFinite()&&it>0&&it<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)back()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+    ScreenDialog({if(!busy)back()}){
         Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
-            Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=Alignment.TopCenter){
+            Box(Modifier.fillMaxSize().screenInsets(),contentAlignment=Alignment.TopCenter){
                 Column(Modifier.widthIn(max=760.dp).fillMaxSize()){
                     Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
                         IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
@@ -293,12 +291,12 @@ private data class IngredientForm(val id:String=newId(),val name:String="",val q
     fun update(row:IngredientForm){items=items.map{if(it.id==row.id)row else it}}
     val count=servings.ifBlank{"0"}.toIntOrNull()
     val valid=title.isNotBlank()&&count!=null&&count in 0..100&&items.any{it.name.isNotBlank()}&&items.all{it.name.isBlank()||it.quantity.isBlank()||it.quantity.replace(',','.').toDoubleOrNull()?.let{n->n.isFinite()&&n>0&&n<=100000}==true}
-    Dialog(onDismissRequest={if(!busy)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
+    ScreenDialog({if(!busy)close()}){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
+            Column(Modifier.fillMaxSize().screenInsets().padding(horizontal=4.dp)){
                 Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){IconButton(enabled=!busy,onClick=close){Icon(Icons.Default.Close,"Cerrar")};Text(if(initial.title.isBlank())"Nueva receta"else "Editar receta",style=MaterialTheme.typography.titleLarge)}
                 HorizontalDivider()
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                     Field(title,{title=it.take(180)},"Nombre")
                     Field(servings,{servings=it.take(3)},"Raciones (opcional)")
                     Row(verticalAlignment=Alignment.CenterVertically){Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);IconButton(enabled=items.size<60&&!busy,onClick={items=items+IngredientForm()}){Icon(Icons.Default.Add,"Añadir ingrediente")}}
@@ -314,11 +312,11 @@ private data class IngredientForm(val id:String=newId(),val name:String="",val q
                     OutlinedTextField(steps,{steps=it.take(20000)},Modifier.fillMaxWidth(),label={Text("Preparación · un paso por línea")},minLines=4)
                     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
                     if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Button(enabled=valid&&!busy,onClick={
+                            val next=initial.copy(title=title.trim(),servings=count!!,ingredients=items.filter{it.name.isNotBlank()}.map{RecipeIngredient(it.name.trim(),it.quantity.replace(',','.').toDoubleOrNull()?:0.0,it.unit)},steps=steps.lines().map{it.trim().take(2000)}.filter{it.isNotBlank()}.take(30))
+                            busy=true;error="";save(next){failure->busy=false;if(failure!=null)error=failure}
+                    },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Check,null);Spacer(Modifier.width(8.dp));Text("Guardar receta")}
                 }
-                Surface(tonalElevation=2.dp){Button(enabled=valid&&!busy,onClick={
-                    val next=initial.copy(title=title.trim(),servings=count!!,ingredients=items.filter{it.name.isNotBlank()}.map{RecipeIngredient(it.name.trim(),it.quantity.replace(',','.').toDoubleOrNull()?:0.0,it.unit)},steps=steps.lines().map{it.trim().take(2000)}.filter{it.isNotBlank()}.take(30))
-                    busy=true;error="";save(next){failure->busy=false;if(failure!=null)error=failure}
-                },modifier=Modifier.fillMaxWidth().padding(16.dp)){Icon(Icons.Default.Check,null);Spacer(Modifier.width(8.dp));Text("Guardar receta")}}
             }
         }
     }

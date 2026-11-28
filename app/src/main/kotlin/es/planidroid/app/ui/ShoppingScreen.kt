@@ -42,8 +42,9 @@ import java.time.format.DateTimeFormatter
     val visibleIds=shown.map{it.id}.toSet();val selected=selectedIds.intersect(visibleIds)
     fun select(id:String){selecting=true;selectedIds=if(id in selectedIds)selectedIds-id else selectedIds+id}
     fun clear(){selecting=false;selectedIds=emptySet()}
-    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)){
-        Row(verticalAlignment=Alignment.CenterVertically){
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=8.dp,bottom=24.dp),
+        verticalArrangement=Arrangement.spacedBy(6.dp)){
+        item{Row(verticalAlignment=Alignment.CenterVertically){
             IconButton(onClick=back){Icon(Icons.Default.ArrowBack,"Volver a listas")}
             Column(Modifier.weight(1f)){Text(listName,style=MaterialTheme.typography.titleLarge);Text(pending.size.toString()+" pendientes",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(share!=null)IconButton(onClick=share){Icon(Icons.Default.Share,"Compartir")}
@@ -55,13 +56,16 @@ import java.time.format.DateTimeFormatter
                 if(removeList!=null)DropdownMenuItem(text={Text("Eliminar lista",color=MaterialTheme.colorScheme.error)},onClick={menu=false;removeList()})
                 if(view!="Historial")DropdownMenuItem(text={Text("Seleccionar productos")},onClick={menu=false;selecting=true})
             }}
+        }}
+        search?.let{query->item{ ShoppingSearch(query,{value->search=value},{search=null;clear()}) }}
+        if(search==null&&!selecting&&view=="Lista"){
+            item{ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})}
+            item{ShoppingAiActions({recipes=true},{shoppingAi=true})}
         }
-        search?.let{ShoppingSearch(it,{value->search=value},{search=null;clear()})}
-        if(search==null&&!selecting&&view=="Lista")ShoppingInput(quick,{quick=it.take(500)},{model.saveShopping(ShoppingText.parse(quick,listId));quick=""},{scan=true})
-        if(search==null&&!selecting&&view=="Lista")ShoppingAiActions({recipes=true},{shoppingAi=true})
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Lista","Rutina","Historial").forEach{v->FilterChip(view==v,{view=v;clear()},label={Text(v)})}}
-        if(selecting)ShoppingSelection(selected.size,shown.size,{selectedIds=if(selected==visibleIds)emptySet()else visibleIds},::clear,{confirmDelete=true})
-        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+        item{ActionFlow{listOf("Lista","Rutina","Historial").forEach{v->
+            FilterChip(view==v,{view=v;clear()},label={Text(v)})
+        }}}
+        if(selecting)item{ShoppingSelection(selected.size,shown.size,{selectedIds=if(selected==visibleIds)emptySet()else visibleIds},::clear,{confirmDelete=true})}
             if(view=="Historial"){
                 if(history.isEmpty())item{Text("Todavía no hay compras.",modifier=Modifier.padding(12.dp))}
                 history.filter{matchesShopping(it.name,search)}.sortedByDescending{it.boughtAt}.groupBy{sessionDate(it.boughtAt)}.forEach{(day,list)->
@@ -86,7 +90,6 @@ import java.time.format.DateTimeFormatter
                     }
                 }
             }
-        }
     }
     if(confirmDelete)Confirm("Eliminar "+selected.size+" productos","No se registrarán como compras; el historial anterior se conserva.",{confirmDelete=false},{model.deleteShopping(selected,listId);clear()})
     if(shoppingAi)ShoppingAssistant(uid,pending,listId,{shoppingAi=false},{model.saveShopping(it)})

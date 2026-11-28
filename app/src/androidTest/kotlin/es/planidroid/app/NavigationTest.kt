@@ -1,5 +1,8 @@
 package es.planidroid.app
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.test.*
@@ -55,5 +58,22 @@ class NavigationTest {
         val intent=Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://calendar.example/fixture.ics"),"text/calendar")
             .addCategory(Intent.CATEGORY_DEFAULT).setPackage(context.packageName)
         assertEquals(MainActivity::class.java.name,intent.resolveActivity(context.packageManager)?.className)
+    }
+
+    @Test fun compactCalendarKeepsActionsInAReachableMenu(){
+        var planned=false
+        var importOpened=false
+        compose.setContent{
+            PlanidroidTheme("Claro",false){
+                androidx.compose.foundation.layout.Box(Modifier.height(240.dp)){
+                    CalendarScreen(emptyList(),emptyList(),{},{},{},{planned=true},importFile={importOpened=true})
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("Opciones del calendario").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Planificar",substring=false).performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Opciones del calendario").performClick()
+        compose.onNodeWithText("Importar archivo de calendario").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle{assertTrue(planned&&importOpened)}
     }
 }

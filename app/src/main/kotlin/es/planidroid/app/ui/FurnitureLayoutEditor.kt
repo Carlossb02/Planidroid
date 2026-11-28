@@ -13,8 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 
 private data class CompartmentForm(val existing:Zone?)
@@ -35,9 +33,9 @@ private data class CompartmentForm(val existing:Zone?)
     val dirty=layout!=FurnitureLayout(layout.original)
     fun dismiss(){if(!busy)close()}
 
-    Dialog(onDismissRequest=::dismiss,properties=DialogProperties(usePlatformDefaultWidth=false)){
+    ScreenDialog(::dismiss){
         Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
-            Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=Alignment.TopCenter){
+            Box(Modifier.fillMaxSize().screenInsets(),contentAlignment=Alignment.TopCenter){
                 Column(Modifier.widthIn(max=760.dp).fillMaxSize()){
                     Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
                         IconButton(enabled=!busy,onClick=::dismiss){Icon(Icons.Default.Close,"Cerrar distribución")}

@@ -381,20 +381,34 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
         val sections=furnitureSections(LayoutGrid.zones(f),data.items)
         if(sections.isEmpty())Text("El mueble está vacío.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         sections.forEach{section->
-            FurnitureSectionHeader(section)
-            section.items.forEach{i->GlassCard(tint=if(s.role=="owner")Mint else Lilac){
-            Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(i.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(i.name,style=MaterialTheme.typography.titleMedium);Text((amountText(i.amount)+" "+i.unit).trim(),style=MaterialTheme.typography.bodySmall)};if(write){
-                var actions by remember(i.id){mutableStateOf(false)}
-                Box{
-                    IconButton(enabled=!access.busy,onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones de "+i.name)}
-                    DropdownMenu(actions,{actions=false}){
-                        DropdownMenuItem(text={Text("Editar")},onClick={actions=false;edit=i})
-                        DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={actions=false;removeProduct=i})
+            val add:(()->Unit)?=if(write&&!access.busy)({
+                edit=Item(furnitureId=f.id,name="",compartment=section.name.ifBlank{UnassignedCompartment})
+            })else null
+            key(section.name){
+                FurnitureCompartment(section,add){product->
+                    Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){
+                        ProductGlyph(product.name,Modifier.size(32.dp),product.icon)
+                        Column(Modifier.weight(1f).padding(horizontal=8.dp)){
+                            Text(product.name,style=MaterialTheme.typography.titleSmall)
+                            Text((amountText(product.amount)+" "+product.unit).trim(),style=MaterialTheme.typography.bodySmall)
+                        }
+                        if(write){
+                            if(product.amount>0)IconButton(enabled=!access.busy,onClick={consume=product}){
+                                Icon(Icons.Outlined.RemoveCircleOutline,"Consumir "+product.name)
+                            }
+                            var actions by remember(product.id){mutableStateOf(false)}
+                            Box{
+                                IconButton(enabled=!access.busy,onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones de "+product.name)}
+                                DropdownMenu(actions,{actions=false}){
+                                    DropdownMenuItem(text={Text("Editar")},onClick={actions=false;edit=product})
+                                    DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={actions=false;removeProduct=product})
+                                }
+                            }
+                        }
                     }
                 }
-            }}
-            if(write)ConsumeButton(i,{consume=i},!access.busy)
-        }}}
+            }
+        }
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
     }}
