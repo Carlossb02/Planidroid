@@ -44,7 +44,7 @@ private data class CompartmentForm(val existing:Zone?)
                         Text("Organizar mueble",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
                     }
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                        .padding(horizontal=20.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                        .padding(start=20.dp,end=20.dp,top=12.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
                         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
                             FurnitureGlyph(furniture.type,Modifier.size(48.dp))
                             Text(furniture.name,style=MaterialTheme.typography.headlineSmall)
@@ -66,16 +66,12 @@ private data class CompartmentForm(val existing:Zone?)
                         FilledTonalButton(enabled=!busy,onClick={editing=CompartmentForm(null)}){
                             Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text("Añadir compartimento")
                         }
-                    }
-                    Surface(tonalElevation=2.dp){
-                        Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=10.dp)){
-                            error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-                            if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-                            Button(enabled=dirty&&!busy,modifier=Modifier.fillMaxWidth(),onClick={
-                                busy=true;error=null
-                                save(layout){failure->busy=false;error=failure;if(failure==null)close()}
-                            }){Text("Guardar distribución")}
-                        }
+                        error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+                        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Button(enabled=dirty&&!busy,modifier=Modifier.fillMaxWidth(),onClick={
+                            busy=true;error=null
+                            save(layout){failure->busy=false;error=failure;if(failure==null)close()}
+                        }){Text("Guardar distribución")}
                     }
                 }
             }

@@ -355,7 +355,6 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     var editFurniture by remember(s.id){mutableStateOf(false)}
     var removeProduct by remember(s.id){mutableStateOf<Item?>(null)}
     var edit by remember(s.id){mutableStateOf<Item?>(null)}
-    var selected by remember(s.id){mutableStateOf<String?>(null)}
     fun update(next:SharedFurniture){access.work(refresh=false){it.update(s,next.furniture.name,encode(next.copy(furniture=next.furniture.copy(photo=""),items=next.items.map{i->i.copy(photo="")})))}}
     Column(Modifier.fillMaxSize()){
         if(write){val exhausted=data.items.filter(InventoryConsumption::pending);if(exhausted.isNotEmpty())Box(Modifier.padding(horizontal=16.dp,vertical=8.dp)){RestockBanner(exhausted,{i,recipe->restock=i to recipe},{old->if(!access.busy)update(data.copy(items=data.items.map{if(it.id==old.id&&InventoryConsumption.pending(it))it.copy(restockAmount=0.0)else it}))},!access.busy)}}
@@ -373,18 +372,18 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
                 }
             }
         }}
-        val initialVisual=LocalViewPreferences.current.inventory=="Visual"
-        var visual by remember(s.id,initialVisual){mutableStateOf(initialVisual)}
         ActionFlow {
-            FilterChip(visual,{visual=!visual;selected=null},label={Text("Plano")})
             if(data.items.any(::usablePantryItem))TextButton(onClick={inspect=true}){Text("Ideas con Gemini")}
-            if(write)FilledTonalIconButton(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=selected?:f.compartments.firstOrNull()?:UnassignedCompartment)}){
+            if(write)FilledTonalIconButton(enabled=!access.busy,onClick={edit=Item(furnitureId=f.id,name="",compartment=f.compartments.firstOrNull()?:UnassignedCompartment)}){
                 Icon(Icons.Outlined.Add,"Añadir contenido")
             }
         }
-        if(visual)FurnitureMap(LayoutGrid.zones(f),data.items,selected){selected=it}
-        data.items.filter{selected==null||it.compartment==selected}.forEach{i->GlassCard(tint=if(s.role=="owner")Mint else Lilac){
-            Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(i.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(i.name,style=MaterialTheme.typography.titleMedium);Text(amountText(i.amount)+" "+i.unit+" · "+i.compartment,style=MaterialTheme.typography.bodySmall)};if(write){
+        val sections=furnitureSections(LayoutGrid.zones(f),data.items)
+        if(sections.isEmpty())Text("El mueble está vacío.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        sections.forEach{section->
+            FurnitureSectionHeader(section)
+            section.items.forEach{i->GlassCard(tint=if(s.role=="owner")Mint else Lilac){
+            Row(verticalAlignment=Alignment.CenterVertically){ProductGlyph(i.name,Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(i.name,style=MaterialTheme.typography.titleMedium);Text((amountText(i.amount)+" "+i.unit).trim(),style=MaterialTheme.typography.bodySmall)};if(write){
                 var actions by remember(i.id){mutableStateOf(false)}
                 Box{
                     IconButton(enabled=!access.busy,onClick={actions=true}){Icon(Icons.Outlined.MoreVert,"Opciones de "+i.name)}
@@ -395,7 +394,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
                 }
             }}
             if(write)ConsumeButton(i,{consume=i},!access.busy)
-        }}
+        }}}
         if(access.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(access.error.isNotBlank())Text(access.error,color=MaterialTheme.colorScheme.error)
     }}
@@ -407,7 +406,7 @@ private data class HouseCard(val key:String,val title:String,val local:Home?,val
     }}
     if(inspect)InventoryIdeas(uid,s.title,data.items){inspect=false}
     if(layout)LayoutEditor(f,data.items,{layout=false}){change,done->
-        access.work(refresh=false,finished={failure->if(failure==null)selected=null;done(failure)}){api->
+        access.work(refresh=false,finished=done){api->
             val latest=access.spaces.find{it.id==s.id}?:error("Mueble no disponible")
             val current=decode<SharedFurniture>(latest.body)
             val furniture=change.furniture(current.furniture)

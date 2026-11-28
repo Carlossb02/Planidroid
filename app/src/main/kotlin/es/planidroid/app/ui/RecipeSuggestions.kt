@@ -116,13 +116,13 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                 Column(Modifier.widthIn(max=760.dp).fillMaxSize()){
                     Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
                         IconButton(enabled=!busy,onClick=::back){Icon(if(recipe==null)Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
-                        Column(Modifier.weight(1f)){Text(if(recipe==null)"Mis recetas" else if(picking)"Ingredientes para la compra" else "Receta",style=MaterialTheme.typography.titleLarge);if(recipe!=null)Text(if(servings>0)"Para "+servings+" personas"else "Raciones sin especificar",style=MaterialTheme.typography.bodySmall)}
+                        Text(if(recipe==null)"Mis recetas" else if(picking)"Ingredientes para la compra" else "Receta",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
                         if(recipe!=null)IconButton(enabled=!busy,onClick={editor=recipe}){Icon(Icons.Default.Edit,"Editar receta")}
 
                     }
                     HorizontalDivider()
                     key(recipe?.id,picking){
-                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=20.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start=20.dp,end=20.dp,top=16.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                             if(recipe==null){
                                 RecipeLibraryActions(!busy,{editor=SavedRecipe()},{scan=true})
                                 TextButton(enabled=!busy,onClick={showGemini=!showGemini}){Text(if(showGemini)"Ocultar Gemini" else "Buscar ideas con Gemini")}
@@ -145,14 +145,22 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                                 }
                             }else if(!picking){
                                 GlassCard(tint=Mint){Text(recipe.title,style=MaterialTheme.typography.headlineMedium)}
-                                Row(verticalAlignment=Alignment.CenterVertically){
-                                    Text("Ingredientes",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
-                                    if(recipe.servings>0&&!cooking){
-                                        IconButton(enabled=servings>1&&!busy,onClick={servings--}){Icon(Icons.Default.Remove,"Reducir raciones")}
+                                if(recipe.servings>0&&!cooking)Surface(
+                                    shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.secondaryContainer
+                                ){
+                                    Row(Modifier.fillMaxWidth().padding(start=12.dp,end=4.dp),
+                                        verticalAlignment=Alignment.CenterVertically){
+                                        Text("Número de personas",Modifier.weight(1f),style=MaterialTheme.typography.titleSmall)
+                                        IconButton(enabled=servings>1&&!busy,onClick={servings--}){
+                                            Icon(Icons.Default.Remove,"Reducir número de personas")
+                                        }
                                         Text(servings.toString(),style=MaterialTheme.typography.labelLarge)
-                                        IconButton(enabled=servings<100&&!busy,onClick={servings++}){Icon(Icons.Default.Add,"Aumentar raciones")}
+                                        IconButton(enabled=servings<100&&!busy,onClick={servings++}){
+                                            Icon(Icons.Default.Add,"Aumentar número de personas")
+                                        }
                                     }
                                 }
+                                Text("Ingredientes",style=MaterialTheme.typography.titleLarge)
                                 recipe.ingredients.forEach { ingredient ->
                                     Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)){
                                         Text(ingredient.name,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
@@ -197,20 +205,28 @@ internal fun readRecipes(body:org.json.JSONObject,source:String):List<SavedRecip
                             }
                             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-                        }
-                    }
-                    if(recipe!=null)Surface(tonalElevation=2.dp){
-                        Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp)){
-                            if(!picking)Button(enabled=!busy,onClick={
+                            if(recipe!=null&&!picking)Button(enabled=!busy,onClick={
                                 amounts=recipe.ingredients.mapIndexed{i,item->
                                     i to RecipeBook.scaleAmount(item.amount,recipe.servings,servings).takeIf{it>0}?.let(::amountText).orEmpty()
                                 }.toMap()
                                 picking=true
-                            },modifier=Modifier.fillMaxWidth()){Text("Elegir ingredientes para la compra")}
-                            else Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
-                                val products=recipe.ingredients.mapIndexedNotNull{i,item->if(i !in selected)null else Shopping(name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name))}
+                            },modifier=Modifier.fillMaxWidth()){
+                                Text("Elegir ingredientes para la compra")
+                            }
+                            else if(recipe!=null)Button(enabled=!busy&&selected.isNotEmpty()&&valid,onClick={
+                                val products=recipe.ingredients.mapIndexedNotNull{i,item->
+                                    if(i !in selected)null else Shopping(
+                                        name=item.name,quantity=amounts.getValue(i).replace(',','.').toDoubleOrNull()?:1.0,
+                                        unit=(units[i]?:item.unit).ifBlank{if(dishName.isNotBlank())"ud" else ""},
+                                        listId=listId,quantitySpecified=!amounts[i].isNullOrBlank(),icon=guessIcon(item.name)
+                                    )
+                                }
                                 add(products);close()
-                            },modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AddShoppingCart,null);Spacer(Modifier.width(8.dp));Text("Añadir "+selected.size+" ingredientes")}
+                            },modifier=Modifier.fillMaxWidth()){
+                                Icon(Icons.Default.AddShoppingCart,null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if(selected.size==1)"Añadir 1 ingrediente" else "Añadir "+selected.size+" ingredientes")
+                            }
                         }
                     }
                 }

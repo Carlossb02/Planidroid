@@ -48,14 +48,14 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
     var moving by remember(uid){mutableStateOf<Item?>(null)}
     var contentQuery by rememberSaveable(directId){mutableStateOf<String?>(null)}
     var consume by remember(uid){mutableStateOf<Item?>(null)};var restock by remember(uid){mutableStateOf<Pair<Item,Boolean>?>(null)}
-    var query by remember{mutableStateOf("")};var selected by remember(directId){mutableStateOf(directId)};var editing by remember{mutableStateOf<Furniture?>(null)};var itemEdit by remember{mutableStateOf<Item?>(null)};var removeFurniture by remember{mutableStateOf<Furniture?>(null)};var removeItem by remember{mutableStateOf<Item?>(null)};var zoneEdit by remember{mutableStateOf(false)};var mode by remember(preferences.inventory){mutableStateOf(preferences.inventory)};var chosen by remember{mutableStateOf<String?>(null)};var scan by remember{mutableStateOf(false)}
-    BackHandler(selected!=null&&directId==null){selected=null;chosen=null}
+    var query by remember{mutableStateOf("")};var selected by remember(directId){mutableStateOf(directId)};var editing by remember{mutableStateOf<Furniture?>(null)};var itemEdit by remember{mutableStateOf<Item?>(null)};var removeFurniture by remember{mutableStateOf<Furniture?>(null)};var removeItem by remember{mutableStateOf<Item?>(null)};var zoneEdit by remember{mutableStateOf(false)};var showPhoto by remember{mutableStateOf(false)};var scan by remember{mutableStateOf(false)}
+    BackHandler(selected!=null&&directId==null){selected=null}
     val f=furniture.find{it.id==selected};val soon=LocalDate.now().plusDays(preferences.expiryDays.toLong()).toString();val expiring=inventory.filter{it.amount>0&&it.expiry.isNotBlank()&&it.expiry<=soon}.sortedBy{it.expiry}
     val exhausted=inventory.filter{InventoryConsumption.pending(it)&&(f==null||it.furnitureId==f.id)}
     Column(Modifier.fillMaxSize()){
         if(exhausted.isNotEmpty())Box(Modifier.padding(horizontal=16.dp,vertical=8.dp)){RestockBanner(exhausted,{i,recipe->restock=i to recipe},{model.dismissRestock(it)})}
         LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        if(f==null){item{TextButton(onClick=back){Text("‹ Casas")};Section(homeName);Field(query,{query=it},"Buscar en casa");Button(onClick={editing=Furniture(name="",type=FurnitureType.FRIDGE,homeId=homeId)}){Icon(Icons.Default.Add,null);Text(" Añadir mueble")};if(expiring.isNotEmpty()&&query.isBlank())GlassCard(tint=Peach){Text("Caducidad próxima",style=MaterialTheme.typography.titleMedium);expiring.take(5).forEach{i->TextButton(onClick={selected=i.furnitureId}){Text("${i.name} · ${i.expiry}")}}}};items(furniture.filter{m->query.isBlank()||listOf(m.name,m.room,m.type.label).any{it.contains(query,true)}||inventory.any{it.furnitureId==m.id&&it.name.contains(query,true)}},key={it.id}){m->GlassCard(Modifier.clickable{selected=m.id;chosen=null},Mint){Row(verticalAlignment=Alignment.CenterVertically){if(m.photo.isNotBlank())LocalPhoto(m.photo,Modifier.size(90.dp))else FurnitureGlyph(m.type,Modifier.size(58.dp));Column(Modifier.weight(1f)){Text(m.name,style=MaterialTheme.typography.titleLarge);Text(m.room.ifBlank{m.type.label});Text("${inventory.count{it.furnitureId==m.id}} elementos",style=MaterialTheme.typography.labelMedium)};Icon(Icons.Default.ChevronRight,null)};if(query.isNotBlank())inventory.filter{it.furnitureId==m.id&&it.name.contains(query,true)}.forEach{Text("${it.name} · ${it.compartment}")}}}}
+        if(f==null){item{TextButton(onClick=back){Text("‹ Casas")};Section(homeName);Field(query,{query=it},"Buscar en casa");Button(onClick={editing=Furniture(name="",type=FurnitureType.FRIDGE,homeId=homeId)}){Icon(Icons.Default.Add,null);Text(" Añadir mueble")};if(expiring.isNotEmpty()&&query.isBlank())GlassCard(tint=Peach){Text("Caducidad próxima",style=MaterialTheme.typography.titleMedium);expiring.take(5).forEach{i->TextButton(onClick={selected=i.furnitureId}){Text("${i.name} · ${i.expiry}")}}}};items(furniture.filter{m->query.isBlank()||listOf(m.name,m.room,m.type.label).any{it.contains(query,true)}||inventory.any{it.furnitureId==m.id&&it.name.contains(query,true)}},key={it.id}){m->GlassCard(Modifier.clickable{selected=m.id},Mint){Row(verticalAlignment=Alignment.CenterVertically){if(m.photo.isNotBlank())LocalPhoto(m.photo,Modifier.size(90.dp))else FurnitureGlyph(m.type,Modifier.size(58.dp));Column(Modifier.weight(1f)){Text(m.name,style=MaterialTheme.typography.titleLarge);Text(m.room.ifBlank{m.type.label});Text("${inventory.count{it.furnitureId==m.id}} elementos",style=MaterialTheme.typography.labelMedium)};Icon(Icons.Default.ChevronRight,null)};if(query.isNotBlank())inventory.filter{it.furnitureId==m.id&&it.name.contains(query,true)}.forEach{Text("${it.name} · ${it.compartment}")}}}}
         else {
             val content=inventory.filter{it.furnitureId==f.id}
             val zones=LayoutGrid.zones(f)
@@ -63,7 +63,7 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
             item {
                 Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        IconButton(onClick={if(directId!=null)back()else{selected=null;chosen=null}}){
+                        IconButton(onClick={if(directId!=null)back()else{selected=null}}){
                             Icon(Icons.Default.ArrowBack,"Volver a muebles")
                         }
                         FurnitureGlyph(f.type,Modifier.size(42.dp))
@@ -79,36 +79,28 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
                                 DropdownMenuItem(text={Text("Editar mueble")},onClick={menu=false;editing=f})
                                 DropdownMenuItem(text={Text("Organizar compartimentos")},onClick={menu=false;zoneEdit=true})
                                 DropdownMenuItem(text={Text("Reconocer una foto")},onClick={menu=false;scan=true})
-                                if(f.photo.isNotBlank())DropdownMenuItem(text={Text("Ver foto")},onClick={menu=false;mode="Foto"})
+                                if(f.photo.isNotBlank())DropdownMenuItem(text={Text("Ver foto")},onClick={menu=false;showPhoto=true})
                                 if(onShare!=null)DropdownMenuItem(text={Text("Compartir")},onClick={menu=false;onShare(f)})
                                 DropdownMenuItem(text={Text("Eliminar mueble",color=MaterialTheme.colorScheme.error)},onClick={menu=false;removeFurniture=f})
                             }
                         }
                     }
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){
-                        FilterChip(mode=="Visual",{mode="Visual";chosen=null},label={Text("Visual")})
-                        FilterChip(mode=="Lista",{mode="Lista";chosen=null},label={Text("Lista")})
-                        Spacer(Modifier.weight(1f))
-                        FilledTonalIconButton(onClick={itemEdit=Item(furnitureId=f.id,name="",compartment=chosen?:zones.firstOrNull()?.name?:UnassignedCompartment)}){
-                            Icon(Icons.Default.Add,"Añadir contenido")
+                    ActionFlow {
+                        FilledTonalButton(onClick={itemEdit=Item(furnitureId=f.id,name="",compartment=zones.firstOrNull()?.name?:UnassignedCompartment)}){
+                            Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text("Añadir contenido")
                         }
                     }
                     contentQuery?.let{ShoppingSearch(it,{value->contentQuery=value},{contentQuery=null})}
-                    if(mode=="Visual"&&contentQuery==null)FurnitureMap(zones,content,chosen){chosen=it}
-                    if(mode=="Foto")LocalPhoto(f.photo,Modifier.fillMaxWidth().height(240.dp))
                 }
             }
-            val sections=if(contentQuery==null&&chosen!=null)listOf(chosen!!) else visible.map{it.compartment}.distinct()
-            if(visible.isEmpty()&&sections.isEmpty())item{Text(if(contentQuery.isNullOrBlank())"Añade el primer producto u objeto." else "Sin coincidencias",color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            sections.forEach { compartment ->
-                val products=visible.filter{it.compartment==compartment}.sortedBy{it.name.lowercase()}
-                item {
-                    Column {
-                        Text(compartment,style=MaterialTheme.typography.titleMedium)
-                        if(products.isEmpty())Text("Compartimento vacío",style=MaterialTheme.typography.bodySmall)
-                    }
-                }
-                items(products,key={it.id}){item->
+            val sections=furnitureSections(zones,visible,includeEmpty=contentQuery.isNullOrBlank())
+            if(sections.isEmpty())item{
+                Text(if(contentQuery.isNullOrBlank())"Añade el primer producto u objeto." else "Sin coincidencias",
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            sections.forEach { section ->
+                item(key="compartment:"+section.name){FurnitureSectionHeader(section)}
+                items(section.items,key={it.id}){item->
                     Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.surface,
                         modifier=Modifier.fillMaxWidth()){
                         Column(Modifier.padding(horizontal=10.dp,vertical=4.dp)){
@@ -140,24 +132,14 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
         }
     }}
     moving?.let{item->MoveInventoryDialog(item,moveTargets.filter{it.id!=item.furnitureId},{moving=null}){target,zone,done->model.moveItem(item,target,zone,done)}}
+    if(showPhoto&&f!=null)AlertDialog(onDismissRequest={showPhoto=false},title={Text(f.name)},
+        text={LocalPhoto(f.photo,Modifier.fillMaxWidth().heightIn(max=360.dp))},
+        confirmButton={TextButton(onClick={showPhoto=false}){Text("Cerrar")}})
     if(inspect&&f!=null)InventoryIdeas(uid,f.name,inventory.filter{it.furnitureId==f.id}){inspect=false}
     consume?.let{i->ConsumeDialog(i,{consume=null},{n,done->model.consumeItem(i,n,done)})}
     restock?.let{(i,recipe)->InventoryRestockDialog(uid,i,lists,{restock=null},{products,listId,done->model.restockItem(i,products,listId,finished=done)},initialRecipeMode=recipe)}
-    editing?.let{m->FurnitureEditor(m,{editing=null},{model.save(it);editing=null})};itemEdit?.let{i->furniture.find{it.id==i.furnitureId}?.let{m->ItemEditor(i,m,{itemEdit=null},{model.save(it);itemEdit=null})}};if(zoneEdit&&f!=null)LayoutEditor(f,inventory.filter{it.furnitureId==f.id},{zoneEdit=false},{layout,done->model.saveFurnitureLayout(f.id,layout){failure->if(failure==null)chosen=null;done(failure)}});if(scan&&f!=null)PhotoScan(f,chosen?:f.compartments.firstOrNull()?:UnassignedCompartment,{scan=false},{items->items.forEach{model.save(it)};scan=false});removeFurniture?.let{m->Confirm("Eliminar ${m.name}","Se eliminará también su contenido.",{removeFurniture=null},{model.delete(m.id,Kind.FURNITURE){if(directId!=null)back()else selected=null}})};removeItem?.let{i->Confirm("Eliminar ${i.name}","Se quitará del inventario.",{removeItem=null},{model.delete(i.id,Kind.ITEM)})}
+    editing?.let{m->FurnitureEditor(m,{editing=null},{model.save(it);editing=null})};itemEdit?.let{i->furniture.find{it.id==i.furnitureId}?.let{m->ItemEditor(i,m,{itemEdit=null},{model.save(it);itemEdit=null})}};if(zoneEdit&&f!=null)LayoutEditor(f,inventory.filter{it.furnitureId==f.id},{zoneEdit=false},{layout,done->model.saveFurnitureLayout(f.id,layout,done)});if(scan&&f!=null)PhotoScan(f,f.compartments.firstOrNull()?:UnassignedCompartment,{scan=false},{items->items.forEach{model.save(it)};scan=false});removeFurniture?.let{m->Confirm("Eliminar ${m.name}","Se eliminará también su contenido.",{removeFurniture=null},{model.delete(m.id,Kind.FURNITURE){if(directId!=null)back()else selected=null}})};removeItem?.let{i->Confirm("Eliminar ${i.name}","Se quitará del inventario.",{removeItem=null},{model.delete(i.id,Kind.ITEM)})}
 }
-@Composable internal fun FurnitureMap(zones:List<Zone>,items:List<Item>,selected:String?,select:(String?)->Unit){
-    val hasDoor=zones.any{it.door}
-    var door by remember(zones){mutableStateOf(false)}
-    Column(verticalArrangement=Arrangement.spacedBy(6.dp)){
-        if(hasDoor)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            FilterChip(!door,{door=false;select(null)},label={Text("Interior")})
-            FilterChip(door,{door=true;select(null)},label={Text("Puerta")})
-        }
-        ZoneBoard(zones.filter{it.door==(door&&hasDoor)},items,selected){select(if(selected==it.name)null else it.name)}
-        if(selected!=null)TextButton(onClick={select(null)}){Text("Ver todo el contenido")}
-    }
-}
-
 @Composable internal fun ZoneBoard(zones:List<Zone>,items:List<Item>,selected:String?,tap:(Zone)->Unit){
     val rows=(zones.maxOfOrNull{it.y+it.h}?:2).coerceIn(2,LayoutGrid.HEIGHT)
     val cellHeight=32.dp
