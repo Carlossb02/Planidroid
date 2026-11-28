@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,13 @@ private fun screenTitle(tab:Tab)=if(tab==Tab.HOME)"Mi día" else tab.label
 private enum class Tab(val label:String){HOME("Inicio"),CALENDAR("Calendario"),TASKS("Tareas"),CAPTURE("Añadir"),SPACES("Espacios"),INVENTORY("Hogar"),SHOPPING("Compra"),SETTINGS("Ajustes"), TOOLS("Herramientas"), SHARED("Compartido"), ASSISTANT("Asistente"), FOCUS("Concentración")}
 fun sessionDate(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
 fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+private fun tabIcon(tab:Tab)=when(tab){
+    Tab.HOME->Icons.Default.Home
+    Tab.CALENDAR->Icons.Default.CalendarMonth
+    Tab.CAPTURE->Icons.Default.AddCircle
+    Tab.TASKS->Icons.Default.Checklist
+    else->Icons.Default.GridView
+}
 @Composable fun PlanidroidScreen(model: PlanidroidModel) {
     val uid by model.scope.collectAsStateWithLifecycle()
     val access by model.access.collectAsStateWithLifecycle()
@@ -83,12 +91,14 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     fun navigate(to:Tab){history=ArrayList(pushDestination(history,to.name))}
     val screenState=rememberSaveableStateHolder(); var edit by remember(scope){mutableStateOf<Task?>(null)}; var plan by remember(scope){mutableStateOf<Task?>(null)}
     var calendarFocus by rememberSaveable(scope){mutableStateOf<String?>(null)}
+    var entryId by rememberSaveable(scope){mutableStateOf<String?>(null)}
+    var sessionEdit by rememberSaveable(scope){mutableStateOf<String?>(null)}
     var calendarEdit by remember(scope){mutableStateOf<Pair<CalendarDraft,Boolean>?>(null)};
     val importFile=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){it?.let(model::openCalendarFile)}
     var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};var agendaDraft by remember(scope){mutableStateOf<Task?>(null)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
     LaunchedEffect(importPreview?.id){
         if(importPreview!=null){
-            calendarEdit=null;edit=null;plan=null;agendaPlan=false;agendaDraft=null
+            calendarEdit=null;entryId=null;sessionEdit=null;edit=null;plan=null;agendaPlan=false;agendaDraft=null
             navigate(Tab.CALENDAR)
         }
     }
@@ -106,31 +116,89 @@ fun time(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format
     PlanidroidTheme(theme,glass,preferences.systemColors) {
         es.planidroid.app.update.UpdatePrompt()
         CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature },LocalRecipeLibrary provides RecipeLibrary(savedRecipes,model),LocalSectionBack provides registerBack,LocalViewPreferences provides preferences) {
-        WindowFrame { Scaffold(contentWindowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snack)},topBar={Surface(color=MaterialTheme.colorScheme.background){Row(Modifier.fillMaxWidth().padding(horizontal=ScreenGutter,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.Default.ArrowBack,"Volver")} ;Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})}}},bottomBar={if(!keyboardOpen)NavigationBar(modifier=Modifier.padding(horizontal=8.dp),windowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES).forEach{t->NavigationBarItem(selected=tab==t||(t.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS)),onClick={navigate(t);edit=null;plan=null;agendaPlan=false;agendaDraft=null},icon={Icon(when(t){Tab.HOME->Icons.Default.Home;Tab.CALENDAR->Icons.Default.CalendarMonth;Tab.CAPTURE->Icons.Default.AddCircle;Tab.TASKS->Icons.Default.Checklist;else->Icons.Default.GridView},null,Modifier.size(if(t==Tab.CAPTURE)26.dp else 23.dp))},label={Text(t.label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelSmall)})}}}){pad->
-            Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)){screenState.SaveableStateProvider(tab.name){when(tab){
-                Tab.HOME->Home(tasks,sessions,{edit=it},{navigate(Tab.CAPTURE)},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},{navigate(Tab.TASKS)},{navigate(Tab.SPACES)},inventory.size,shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},{model.save(listOf(it))},{navigate(Tab.FOCUS)},{navigate(Tab.ASSISTANT)})
-                Tab.FOCUS->FocusScreen(actionable){id,min->model.logFocus(id,min)}
-                Tab.TASKS->TaskList(actionable,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)},{task,status->model.changeTaskStatus(task.id,status)})
-                Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},
-                    {agendaDraft=null;agendaPlan=true},addEvent={day->
-                        val start=day.atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                        calendarEdit=CalendarDraft(newId(),"",start,start+3_600_000L) to false
-                    },importFile={importFile.launch(arrayOf("text/calendar","text/x-vcalendar","application/ics","application/icalendar","application/octet-stream"))},
-                    editEvent=::editCalendarEvent,focusDay=calendarFocus,consumeFocus={calendarFocus=null})
-                Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);navigate(Tab.TASKS)},{created->plan=created;navigate(Tab.TASKS)},{prefill->edit=prefill},compactAvailability)
-                Tab.ASSISTANT->AssistantScreen(scope,actionable,shoppingLists,model,{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
-                Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.SHARED)},{navigate(Tab.ASSISTANT)},{navigate(Tab.TOOLS)})
-                Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
-                Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
-                Tab.SHARED->SharedScreen(scope)
-                Tab.SETTINGS->SettingsScreen(model,scope)
-                Tab.TOOLS->ToolsScreen(model,scope)
-            }}}
-        }
+        WindowFrame {
+            BoxWithConstraints(Modifier.fillMaxSize()){
+                val wide=maxWidth>=TabletNavigationWidth
+                val destinations=listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES)
+                fun selected(destination:Tab)=tab==destination||
+                    (destination.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS))
+                fun select(destination:Tab){
+                    navigate(destination);edit=null;plan=null;agendaPlan=false;agendaDraft=null
+                }
+                Row(Modifier.fillMaxSize()){
+                    if(wide)NavigationRail(windowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.surface){
+                        destinations.forEach{destination->
+                            NavigationRailItem(selected(destination),{select(destination)},
+                                icon={Icon(tabIcon(destination),null)},label={Text(destination.label)})
+                        }
+                    }
+                    Scaffold(
+                        modifier=Modifier.weight(1f),
+                        contentWindowInsets=WindowInsets(0,0,0,0),
+                        containerColor=MaterialTheme.colorScheme.background,
+                        snackbarHost={SnackbarHost(snack)},
+                        topBar={
+                            Row(Modifier.fillMaxWidth().padding(horizontal=ScreenGutter,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                                if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
+                                Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
+                                ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})
+                            }
+                        },
+                        bottomBar={
+                            if(!wide&&!keyboardOpen)NavigationBar(windowInsets=WindowInsets(0,0,0,0),tonalElevation=0.dp){
+                                destinations.forEach{destination->
+                                    NavigationBarItem(selected(destination),{select(destination)},icon={Icon(tabIcon(destination),null)},
+                                        label={Text(destination.label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelSmall)})
+                                }
+                            }
+                        }
+                    ){pad->
+                        Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)){
+                            screenState.SaveableStateProvider(tab.name){
+                                when(tab){
+                                    Tab.HOME->Home(tasks,sessions,{entryId=it.id},{edit=it},
+                                        {navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},{navigate(Tab.TASKS)},
+                                        shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},
+                                        {navigate(Tab.FOCUS)},{navigate(Tab.ASSISTANT)})
+                                    Tab.FOCUS->FocusScreen(actionable){id,min->model.logFocus(id,min)}
+                                    Tab.TASKS->TaskList(actionable,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)},{task,status->model.changeTaskStatus(task.id,status)})
+                                    Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},
+                                        {agendaDraft=null;agendaPlan=true},addEvent={day->
+                                            val start=day.atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                            calendarEdit=CalendarDraft(newId(),"",start,start+3_600_000L) to false
+                                        },importFile={importFile.launch(arrayOf("text/calendar","text/x-vcalendar","application/ics","application/icalendar","application/octet-stream"))},
+                                        openEvent={entry->entryId=entry.id},focusDay=calendarFocus,consumeFocus={calendarFocus=null})
+                                    Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);navigate(Tab.TASKS)},{created->plan=created;navigate(Tab.TASKS)},{prefill->edit=prefill},compactAvailability)
+                                    Tab.ASSISTANT->AssistantScreen(scope,actionable,shoppingLists,model,{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
+                                    Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.SHARED)},{navigate(Tab.ASSISTANT)},{navigate(Tab.TOOLS)})
+                                    Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
+                                    Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
+                                    Tab.SHARED->SharedScreen(scope)
+                                    Tab.SETTINGS->SettingsScreen(model,scope)
+                                    Tab.TOOLS->ToolsScreen(model,scope)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         fun requestEventReminder(remind:Boolean){
             if(remind&&Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                 permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        sessions.find{it.id==entryId}?.let{entry->
+            val task=tasks.find{it.id==entry.taskId}
+            AgendaEntryDetails(entry,task,{entryId=null},onEdit={
+                entryId=null
+                if(entry.calendarTitle.isNotBlank()&&task!=null)editCalendarEvent(entry,task)
+                else sessionEdit=entry.id
+            },onDone={done->model.save(listOf(entry.copy(done=done)))})
+        }
+        sessions.find{it.id==sessionEdit}?.let{entry->
+            SessionDetails(entry,tasks.find{it.id==entry.taskId},sessions,tasks,{sessionEdit=null},
+                {model.save(listOf(it));sessionEdit=null},{model.delete(entry.id,Kind.SESSION);sessionEdit=null},
+                {edit=it;sessionEdit=null})
         }
         calendarEdit?.let{(draft,revising)->
             CalendarEventDialog(draft,if(revising)"Editar evento" else "Nuevo evento",{calendarEdit=null},save={value,done->

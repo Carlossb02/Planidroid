@@ -132,6 +132,20 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     fun save(l: ShoppingList) { val uid=scope.value;run { dao.save(uid,l.id,Kind.SHOPPING_LIST.name,encode(l)) } }
     fun saveShopping(items:List<Shopping>) { val uid=scope.value;run { db.withTransaction { items.forEach{dao.save(uid,it.id,Kind.SHOPPING.name,encode(it))} } } }
     fun save(f: Furniture) { val s=scope.value; run { dao.save(s,f.id,Kind.FURNITURE.name,encode(f)) } }
+    internal fun saveFurnitureLayout(id:String,layout:FurnitureLayout,finished:(String?)->Unit){
+        stockAction({uid->db.withTransaction{
+            val row=dao.get(uid,id)?.takeIf{!it.deleted&&it.kind==Kind.FURNITURE.name}?:error("El mueble ya no existe")
+            val furniture=layout.furniture(decode<Furniture>(row.payload))
+            dao.save(uid,id,Kind.FURNITURE.name,encode(furniture))
+            dao.all(uid).filter{!it.deleted&&it.kind==Kind.ITEM.name}.forEach{entry->
+                val item=decode<Item>(entry.payload)
+                if(item.furnitureId==id){
+                    val updated=layout.item(item)
+                    if(updated!=item)dao.save(uid,item.id,Kind.ITEM.name,encode(updated))
+                }
+            }
+        }},finished)
+    }
     fun save(i: Item) { val s=scope.value; run { dao.save(s,i.id,Kind.ITEM.name,encode(i.copy(restockAmount=if(i.amount>0)0.0 else i.restockAmount))) } }
     internal fun moveItem(expected:Item,target:Furniture,compartment:String,finished:(String?)->Unit){
         stockAction({uid->
@@ -143,7 +157,7 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
                 val furnitureRow=dao.get(uid,target.id)?.takeIf{!it.deleted&&it.kind==Kind.FURNITURE.name}
                     ?:error("El mueble de destino ya no existe.")
                 val furniture=decode<Furniture>(furnitureRow.payload)
-                require(furniture.id!=item.furnitureId&&compartment in furniture.compartments.ifEmpty{listOf("General")}){
+                require(furniture.id!=item.furnitureId&&compartment in furniture.compartments.ifEmpty{listOf(UnassignedCompartment)}){
                     "Ese compartimento ya no existe."
                 }
                 dao.save(uid,item.id,Kind.ITEM.name,encode(item.copy(furnitureId=furniture.id,compartment=compartment)))
