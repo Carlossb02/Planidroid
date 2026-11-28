@@ -16,8 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 import java.time.*
 import kotlinx.coroutines.launch
@@ -29,7 +27,7 @@ import kotlinx.coroutines.launch
     fun prefill(){aiBusy=true;error="";val snapshot=t.copy(minutes=minutes.toIntOrNull()?:t.minutes);aiScope.launch{try{val p=es.planidroid.app.sync.AiConfig.provider(ctx,uid).planWithContext(snapshot,"Completa solo los campos faltantes sin cambiar los existentes",availability).tasks.singleOrNull()?:error("No hay propuesta");aiDraft=snapshot.copy(description=snapshot.description.ifBlank{p.description},due=snapshot.due.ifBlank{p.due},category=if(snapshot.due.isBlank()&&p.due.isNotBlank())Category.DEADLINE else snapshot.category,minutes=snapshot.minutes.takeIf{it>0}?:p.minutes,checks=snapshot.checks.ifEmpty{p.checks},phases=snapshot.phases.ifEmpty{p.phases},goal=snapshot.goal.ifBlank{p.goal},planHints=PlanningPreferences.merge(p.planHints,snapshot.planHints,snapshot.description))}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){error=e.localizedMessage?:"Gemini no disponible"}finally{aiBusy=false}}}
     val contact=rememberLauncherForActivityResult(ActivityResultContracts.PickContact()){uri->if(uri!=null){runCatching{ctx.contentResolver.query(uri,arrayOf(ContactsContract.Contacts.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())t=t.copy(contact=it.getString(0).orEmpty())}}.onFailure{error="No se pudo leer el contacto"}}}
     fun validated(action:(Task)->Unit){val n=minutes.ifBlank{"0"}.toIntOrNull();if(t.title.isBlank()||n==null||n !in 0..100000){error="Escribe un título y una estimación válida";return};if((t.category==Category.DEADLINE&&t.due.isBlank())||(t.due.isNotBlank()&&runCatching{LocalDate.parse(t.due)}.isFailure)){error="Introduce una fecha válida AAAA-MM-DD";return};if(t.recurrence!=Recurrence.NONE&&t.due.isBlank()){error="Indica una fecha límite para repetir";return};if(TaskConstraints.cycle(t,allTasks)){error="Las dependencias no pueden formar ciclos";return};if(t.startDate.isNotBlank()&&runCatching{LocalDate.parse(t.startDate)}.isFailure){error="Fecha de inicio inválida";return};if(t.startDate.isNotBlank()&&t.due.isNotBlank()&&t.startDate>t.due){error="El inicio debe preceder a la fecha límite";return};if(runCatching{LocalTime.parse(t.reminderTime)}.isFailure){error="Hora de aviso inválida";return};action(t.copy(title=t.title.trim(),minutes=n,tags=tags.split(',').map{it.trim()}.filter{it.isNotEmpty()}))}
-    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){Surface(Modifier.fillMaxSize()){Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
+    ScreenDialog(close){Surface(Modifier.fillMaxSize()){Column(Modifier.fillMaxSize().screenInsets().padding(horizontal=4.dp)){
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){IconButton(onClick=close){Icon(Icons.Default.Close,"Cerrar")};Text(if(allTasks.any{it.id==initial.id})"Editar tarea"else "Nueva tarea",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge);if(allTasks.any{it.id==initial.id})IconButton(onClick={remove=true}){Icon(Icons.Default.DeleteOutline,"Eliminar tarea",tint=MaterialTheme.colorScheme.error)}}
         HorizontalDivider();LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
         item{Field(t.title,{t=t.copy(title=it)},"Título");DateField(t.due,{t=t.copy(due=it,category=if(it.isBlank()&&t.category==Category.DEADLINE)Category.INBOX else if(it.isNotBlank())Category.DEADLINE else t.category)},"Fecha límite");Field(t.description,{t=t.copy(description=it)},"Notas",false);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Column(Modifier.weight(1f)){Field(minutes,{minutes=it},"Minutos")};Column(Modifier.weight(1f)){Choice("Prioridad",Priority.entries,t.priority,{it.label}){t=t.copy(priority=it)}}};FilledTonalButton(enabled=t.title.isNotBlank()&&!aiBusy,onClick={if(es.planidroid.app.sync.AiConfig.configured(ctx,uid))aiConfirm=true else aiConnect=true},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.AutoAwesome,null);Spacer(Modifier.width(8.dp));Text(if(aiBusy)"Preparando…" else "Completar con Gemini")};if(aiBusy)LinearProgressIndicator(Modifier.fillMaxWidth());Row(verticalAlignment=Alignment.CenterVertically){Checkbox(t.status==Status.DONE,{t=t.copy(status=if(it)Status.DONE else Status.PENDING)});Text("Completada")};TextButton(onClick={advanced=!advanced}){Text(if(advanced)"Ocultar detalles" else "Más detalles")}}
@@ -39,8 +37,16 @@ import kotlinx.coroutines.launch
         item{TextButton(onClick={objectives=!objectives},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Checklist,null);Spacer(Modifier.width(8.dp));Text("Objetivos · "+t.checks.size);Spacer(Modifier.weight(1f));Icon(if(objectives)Icons.Default.ExpandLess else Icons.Default.ExpandMore,null)}};if(objectives)item{GlassCard{Text("Checklist y objetivos",style=MaterialTheme.typography.titleMedium);t.checks.forEach{c->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(c.done,{v->t=t.copy(checks=t.checks.map{if(it.id==c.id)it.copy(done=v) else it})});Text(c.title,Modifier.weight(1f));TextButton(onClick={t=t.copy(checks=t.checks.filterNot{it.id==c.id})}){Text("Quitar")}}};Field(check,{check=it},"Nuevo objetivo");TextButton(enabled=check.isNotBlank(),onClick={t=t.copy(checks=t.checks+Check(title=check.trim()));check=""}){Text("Añadir objetivo")}}}
         item{TextButton(onClick={phasesOpen=!phasesOpen},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Layers,null);Spacer(Modifier.width(8.dp));Text("Fases · "+t.phases.size);Spacer(Modifier.weight(1f));Icon(if(phasesOpen)Icons.Default.ExpandLess else Icons.Default.ExpandMore,null)}};if(phasesOpen)item{GlassCard{Text("Fases",style=MaterialTheme.typography.titleMedium);t.phases.forEach{p->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(p.done,{v->t=t.copy(phases=t.phases.map{if(it.id==p.id)it.copy(done=v) else it})});Text(p.title,Modifier.weight(1f));TextButton(onClick={phaseEdit=p}){Text("Editar")};TextButton(onClick={t=t.copy(phases=t.phases.filterNot{it.id==p.id})}){Text("Quitar")}};Row(verticalAlignment=Alignment.CenterVertically){Text("${p.minutes} min",Modifier.weight(1f));TextButton(onClick={val a=t.phases.toMutableList();val i=a.indexOf(p);if(i>0){a.removeAt(i);a.add(i-1,p);t=t.copy(phases=a)}}){Text("↑")};TextButton(onClick={val a=t.phases.toMutableList();val i=a.indexOf(p);if(i<a.lastIndex){a.removeAt(i);a.add(i+1,p);t=t.copy(phases=a)}}){Text("↓")};TextButton(onClick={t=t.copy(phases=t.phases.map{if(it.id==p.id)it.copy(minutes=(it.minutes-15).coerceAtLeast(0))else it})}){Text("−15")};TextButton(onClick={t=t.copy(phases=t.phases.map{if(it.id==p.id)it.copy(minutes=(it.minutes+15).coerceAtMost(100000))else it})}){Text("+15")}}};Field(phase,{phase=it},"Nueva fase");TextButton(enabled=phase.isNotBlank(),onClick={t=t.copy(phases=t.phases+Phase(title=phase.trim()));phase=""}){Text("Añadir fase")}}}
         if(advanced&&allTasks.any{it.id==initial.id})item{TextButton(onClick={validated(duplicate)}){Icon(Icons.Default.ContentCopy,null);Text(" Duplicar tarea")}}
+        item{
+            if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
+            ActionFlow{
+                OutlinedButton(enabled=!aiBusy,onClick={validated(save)}){Text("Guardar")}
+                Button(enabled=!aiBusy&&TaskConstraints.unmet(t,allTasks).isEmpty(),onClick={validated(plan)}){
+                    Text("Planificar")
+                }
+            }
+        }
     }
-    Surface(tonalElevation=2.dp){Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(enabled=!aiBusy,onClick={validated(save)},modifier=Modifier.weight(1f)){Icon(Icons.Default.Check,null);Text(" Guardar")};Button(enabled=!aiBusy&&TaskConstraints.unmet(t,allTasks).isEmpty(),onClick={validated(plan)},modifier=Modifier.weight(1f)){Icon(Icons.Default.CalendarToday,null,Modifier.size(18.dp));Text(" Planificar")}}}}
     }}}
     if(aiConnect)PersonalGeminiDialog(uid){aiConnect=false}
     if(aiConfirm)Confirm("Completar con Gemini","Se enviará la tarea sin contactos ni adjuntos y los intervalos ocupados.",{aiConfirm=false},{prefill()})
@@ -140,9 +146,9 @@ import kotlinx.coroutines.launch
         hints=hints.copy(availableWeekdays=days.map{it.value}.sorted(),daysPerWeek=days.size,excludedWeekdays=hints.excludedWeekdays.filterNot{it==day.value})
         feedback=""
     }
-    Dialog(onDismissRequest={if(!approved)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
+    ScreenDialog({if(!approved)close()}){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
+            Column(Modifier.fillMaxSize().screenInsets().padding(horizontal=4.dp)){
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){IconButton(enabled=!approved,onClick=close){Icon(Icons.Default.Close,"Cerrar")};Column(Modifier.weight(1f)){Text("Planificación",style=MaterialTheme.typography.titleLarge);Text(task.title,maxLines=2,style=MaterialTheme.typography.bodySmall)}}
             HorizontalDivider()
             LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
@@ -217,8 +223,7 @@ import kotlinx.coroutines.launch
                         }
                     }
                 }
-            }
-            Surface(tonalElevation=2.dp){Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                item{Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Button(enabled=!aiBusy&&!approved&&result?.blocks?.isNotEmpty()==true&&total!=null&&(!hasToday||startToday!=null),onClick={
                         val r=result?:return@Button;val effort=total?:return@Button
                         if(r.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){planningNow=System.currentTimeMillis()+30_000L;feedback="El horario ha avanzado. Revisa la propuesta actualizada.";return@Button}
@@ -228,6 +233,7 @@ import kotlinx.coroutines.launch
                     },modifier=Modifier.fillMaxWidth()){Text(if(missing==0)if(previous.isEmpty())"Guardar tarea y agenda" else "Guardar nueva planificación" else "Aceptar plan parcial")}
                     if(approved)LinearProgressIndicator(Modifier.fillMaxWidth());if(feedback.isNotBlank())Text(feedback,style=MaterialTheme.typography.bodySmall)
                 }}
+                }
             }
         }
     }

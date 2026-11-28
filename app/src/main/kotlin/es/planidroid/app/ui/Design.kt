@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 
 val Blue=Color(0xFF376DAB); val Mint=Color(0xFF32816A); val Peach=Color(0xFFAD663D); val Lilac=Color(0xFF7955A5)
@@ -30,9 +32,16 @@ fun taskColor(task:Task?):Color {
 
 internal val ScreenGutter=16.dp
 
+internal fun Modifier.screenInsets()=safeContentPadding().imePadding()
+
+@Composable internal fun ScreenDialog(close:()->Unit,content:@Composable ()->Unit){
+    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false),
+        content=content)
+}
+
 @Composable internal fun WindowFrame(content:@Composable ()->Unit){
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
-        Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding()){content()}
+        Box(Modifier.fillMaxSize().screenInsets()){content()}
     }
 }
 

@@ -53,8 +53,8 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
     val f=furniture.find{it.id==selected};val soon=LocalDate.now().plusDays(preferences.expiryDays.toLong()).toString();val expiring=inventory.filter{it.amount>0&&it.expiry.isNotBlank()&&it.expiry<=soon}.sortedBy{it.expiry}
     val exhausted=inventory.filter{InventoryConsumption.pending(it)&&(f==null||it.furnitureId==f.id)}
     Column(Modifier.fillMaxSize()){
-        if(exhausted.isNotEmpty())Box(Modifier.padding(horizontal=16.dp,vertical=8.dp)){RestockBanner(exhausted,{i,recipe->restock=i to recipe},{model.dismissRestock(it)})}
         LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        if(exhausted.isNotEmpty())item{RestockBanner(exhausted,{i,recipe->restock=i to recipe},{model.dismissRestock(it)})}
         if(f==null){item{TextButton(onClick=back){Text("‹ Casas")};Section(homeName);Field(query,{query=it},"Buscar en casa");Button(onClick={editing=Furniture(name="",type=FurnitureType.FRIDGE,homeId=homeId)}){Icon(Icons.Default.Add,null);Text(" Añadir mueble")};if(expiring.isNotEmpty()&&query.isBlank())GlassCard(tint=Peach){Text("Caducidad próxima",style=MaterialTheme.typography.titleMedium);expiring.take(5).forEach{i->TextButton(onClick={selected=i.furnitureId}){Text("${i.name} · ${i.expiry}")}}}};items(furniture.filter{m->query.isBlank()||listOf(m.name,m.room,m.type.label).any{it.contains(query,true)}||inventory.any{it.furnitureId==m.id&&it.name.contains(query,true)}},key={it.id}){m->GlassCard(Modifier.clickable{selected=m.id},Mint){Row(verticalAlignment=Alignment.CenterVertically){if(m.photo.isNotBlank())LocalPhoto(m.photo,Modifier.size(90.dp))else FurnitureGlyph(m.type,Modifier.size(58.dp));Column(Modifier.weight(1f)){Text(m.name,style=MaterialTheme.typography.titleLarge);Text(m.room.ifBlank{m.type.label});Text("${inventory.count{it.furnitureId==m.id}} elementos",style=MaterialTheme.typography.labelMedium)};Icon(Icons.Default.ChevronRight,null)};if(query.isNotBlank())inventory.filter{it.furnitureId==m.id&&it.name.contains(query,true)}.forEach{Text("${it.name} · ${it.compartment}")}}}}
         else {
             val content=inventory.filter{it.furnitureId==f.id}
@@ -99,32 +99,29 @@ fun illustration(type:FurnitureType)=when(type){FurnitureType.FRIDGE->R.drawable
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             sections.forEach { section ->
-                item(key="compartment:"+section.name){FurnitureSectionHeader(section)}
-                items(section.items,key={it.id}){item->
-                    Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.surface,
-                        modifier=Modifier.fillMaxWidth()){
-                        Column(Modifier.padding(horizontal=10.dp,vertical=4.dp)){
-                            Row(Modifier.fillMaxWidth().clickable{itemEdit=item},verticalAlignment=Alignment.CenterVertically){
-                                if(item.photo.isNotBlank())LocalPhoto(item.photo,Modifier.size(40.dp))
-                                else ProductGlyph(item.name,Modifier.size(36.dp),item.icon)
-                                Column(Modifier.weight(1f).padding(horizontal=10.dp)){
-                                    Text(item.name,style=MaterialTheme.typography.titleSmall)
-                                    Text((amountText(item.amount)+" "+item.unit).trim(),style=MaterialTheme.typography.bodySmall)
-                                    if(item.expiry.isNotBlank())Text(item.expiry,style=MaterialTheme.typography.labelSmall,
-                                        color=if(item.expiry<=soon)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                if(item.amount>0)IconButton(onClick={consume=item}){Icon(Icons.Default.RemoveCircleOutline,"Consumir "+item.name)}
-                                var options by remember(item.id){mutableStateOf(false)}
-                                Box{
-                                    IconButton(onClick={options=true}){Icon(Icons.Default.MoreVert,"Opciones de "+item.name)}
-                                    DropdownMenu(options,{options=false}){
-                                        DropdownMenuItem(text={Text("Editar")},onClick={options=false;itemEdit=item})
-                                        if(moveTargets.any{it.id!=item.furnitureId})DropdownMenuItem(text={Text("Mover a otro mueble")},onClick={options=false;moving=item})
-                                        DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={options=false;removeItem=item})
-                                    }
+                item(key="compartment:"+section.name){
+                    FurnitureCompartment(section,add={
+                        itemEdit=Item(furnitureId=f.id,name="",compartment=section.name.ifBlank{UnassignedCompartment})
+                    }){item->
+                        Row(Modifier.fillMaxWidth().padding(vertical=3.dp).clickable{itemEdit=item},verticalAlignment=Alignment.CenterVertically){
+                            if(item.photo.isNotBlank())LocalPhoto(item.photo,Modifier.size(40.dp))
+                            else ProductGlyph(item.name,Modifier.size(36.dp),item.icon)
+                            Column(Modifier.weight(1f).padding(horizontal=10.dp)){
+                                Text(item.name,style=MaterialTheme.typography.titleSmall)
+                                Text((amountText(item.amount)+" "+item.unit).trim(),style=MaterialTheme.typography.bodySmall)
+                                if(item.expiry.isNotBlank())Text(item.expiry,style=MaterialTheme.typography.labelSmall,
+                                    color=if(item.expiry<=soon)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if(item.amount>0)IconButton(onClick={consume=item}){Icon(Icons.Default.RemoveCircleOutline,"Consumir "+item.name)}
+                            var options by remember(item.id){mutableStateOf(false)}
+                            Box{
+                                IconButton(onClick={options=true}){Icon(Icons.Default.MoreVert,"Opciones de "+item.name)}
+                                DropdownMenu(options,{options=false}){
+                                    DropdownMenuItem(text={Text("Editar")},onClick={options=false;itemEdit=item})
+                                    if(moveTargets.any{it.id!=item.furnitureId})DropdownMenuItem(text={Text("Mover a otro mueble")},onClick={options=false;moving=item})
+                                    DropdownMenuItem(text={Text("Eliminar",color=MaterialTheme.colorScheme.error)},onClick={options=false;removeItem=item})
                                 }
                             }
-
                         }
                     }
                 }

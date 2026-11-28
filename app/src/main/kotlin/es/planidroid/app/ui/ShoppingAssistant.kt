@@ -13,8 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 import es.planidroid.app.sync.AiConfig
 import kotlinx.coroutines.*
@@ -102,9 +100,9 @@ fun ShoppingAssistant(
         }
     }
 
-    Dialog(onDismissRequest=close, properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
+    ScreenDialog(close) {
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)) {
+            Column(Modifier.fillMaxSize().screenInsets().padding(horizontal=4.dp)) {
                 Row(Modifier.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=close) { Icon(Icons.Default.Close, "Cerrar") }
                     Text("Preguntar a Gemini", style=MaterialTheme.typography.titleLarge)

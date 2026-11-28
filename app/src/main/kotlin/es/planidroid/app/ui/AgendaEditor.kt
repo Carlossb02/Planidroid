@@ -9,8 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import es.planidroid.app.domain.*
 import java.time.*
 import kotlinx.coroutines.launch
@@ -66,9 +64,9 @@ import kotlinx.coroutines.launch
     val preview=proposal
     LaunchedEffect(preview){if(preview!=null)listState.scrollToItem(0)}
     LaunchedEffect(tasks,sessions,external){if(!submitted)reset()}
-    Dialog(onDismissRequest={if(!submitted)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
+    ScreenDialog({if(!submitted)close()}){
         Surface(Modifier.fillMaxSize()){
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal=4.dp)){
+            Column(Modifier.fillMaxSize().screenInsets().padding(horizontal=4.dp)){
             LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 if(preview==null){
                 item{
@@ -193,28 +191,27 @@ import kotlinx.coroutines.launch
                     }
 
                 }
-            }
-            Surface(tonalElevation=2.dp){
-                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)){
-                    if(error.isNotBlank())Text(error,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        TextButton(enabled=!submitted,onClick={if(preview==null)close()else reset()}){
-                            Text(if(preview==null)"Cerrar" else "Ajustar")
-                        }
-                        Spacer(Modifier.weight(1f))
-                        if(submitted)CircularProgressIndicator(Modifier.size(24.dp))
-                        if(preview!=null)Button(enabled=preview.blocks.isNotEmpty()&&!aiBusy&&!submitted,onClick={
-                            if(preview.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){
-                                reset()
-                                error="El horario ha avanzado. Calcula de nuevo."
-                            }else{
-                                submitted=true
-                                accept(preview.sessions(keepBreaks),replacing,approvedUpdates){failure->
-                                    submitted=false
-                                    if(failure!=null)error=failure
-                                }
+                item {
+                    Column(Modifier.fillMaxWidth()){
+                        if(error.isNotBlank())Text(error,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                        ActionFlow{
+                            TextButton(enabled=!submitted,onClick={if(preview==null)close()else reset()}){
+                                Text(if(preview==null)"Cerrar" else "Ajustar")
                             }
-                        }){Text(if(preview.deficits.isEmpty())"Guardar plan" else "Guardar plan parcial")}
+                            if(submitted)CircularProgressIndicator(Modifier.size(24.dp))
+                            if(preview!=null)Button(enabled=preview.blocks.isNotEmpty()&&!aiBusy&&!submitted,onClick={
+                                if(preview.blocks.any{it.start<=System.currentTimeMillis()+5_000L}){
+                                    reset()
+                                    error="El horario ha avanzado. Calcula de nuevo."
+                                }else{
+                                    submitted=true
+                                    accept(preview.sessions(keepBreaks),replacing,approvedUpdates){failure->
+                                        submitted=false
+                                        if(failure!=null)error=failure
+                                    }
+                                }
+                            }){Text(if(preview.deficits.isEmpty())"Guardar plan" else "Guardar plan parcial")}
+                        }
                     }
                 }
             }
