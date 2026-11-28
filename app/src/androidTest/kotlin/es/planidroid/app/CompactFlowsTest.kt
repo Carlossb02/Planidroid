@@ -1,6 +1,7 @@
 package es.planidroid.app
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -9,10 +10,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import es.planidroid.app.domain.Shopping
+import es.planidroid.app.domain.Item
 import es.planidroid.app.domain.ShoppingList
 import es.planidroid.app.domain.Zone
 import es.planidroid.app.ui.ActionFlow
-import es.planidroid.app.ui.FurnitureMap
+import es.planidroid.app.ui.FurnitureSectionHeader
+import es.planidroid.app.ui.furnitureSections
 import es.planidroid.app.ui.PlanidroidTheme
 import es.planidroid.app.ui.ReviewAssistantShopping
 import es.planidroid.app.ui.ShoppingPaste
@@ -58,18 +61,21 @@ class CompactFlowsTest {
         }
     }
 
-    @Test fun furnitureDoorCanBeOpenedAndSelectedOnCompactWidth() {
-        var selected:String?=null
+    @Test fun furnitureSectionsIncludeEmptyCompartmentsAndDistinguishTheDoor() {
+        val zones=listOf(Zone("Botellas",door=true),Zone("Balda"))
+        val sections=furnitureSections(zones,listOf(Item(name="Zumo",furnitureId="fridge",compartment="Botellas")))
         compose.setContent {
             PlanidroidTheme("Oscuro",false) {
-                Box(Modifier.width(230.dp)) {
-                    FurnitureMap(listOf(Zone("Balda",h=2),Zone("Botellas",door=true,h=2)),emptyList(),null){selected=it}
+                Column(Modifier.width(230.dp)){
+                    sections.forEach{FurnitureSectionHeader(it)}
                 }
             }
         }
-        compose.onNodeWithText("Puerta").performClick()
-        compose.onNodeWithText("Botellas").assertIsDisplayed().performClick()
-        compose.runOnIdle{assertEquals("Botellas",selected)}
+        compose.onNodeWithText("Balda").assertIsDisplayed()
+        compose.onNodeWithText("Interior · Vacío").assertIsDisplayed()
+        compose.onNodeWithText("Botellas").assertIsDisplayed()
+        compose.onNodeWithText("Puerta · 1 producto").assertIsDisplayed()
+        assertEquals(listOf("Balda","Botellas"),sections.map{it.name})
     }
 
     @Test fun assistantShoppingCanBeCorrectedBeforeApplyingTheProposal() {

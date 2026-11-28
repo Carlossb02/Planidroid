@@ -11,6 +11,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import es.planidroid.app.domain.*
 import es.planidroid.app.ui.*
+import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -43,7 +45,7 @@ class ReadAndOrganizeTest {
         compose.setContent {
             PlanidroidTheme("Claro",false){
                 var details by remember{mutableStateOf<Session?>(null)}
-                Home(listOf(task),listOf(entry),{details=it},{},{},{},{},{},0,{},{})
+                Home(listOf(task),listOf(entry),{details=it},{},{},{},{},0,{},{})
                 details?.let{AgendaEntryDetails(it,task,{details=null},{edited=true},{})}
             }
         }
@@ -56,9 +58,38 @@ class ReadAndOrganizeTest {
         compose.runOnIdle{assertTrue(edited)}
     }
 
+    @Test fun homeCombinesDeadlinesAndEventsAndLinksToRecipes(){
+        val today=LocalDate.now()
+        val task=Task(title="Entregar el trabajo",due=today.plusDays(2).toString())
+        val start=today.plusDays(1).atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val event=Session(taskId="appointment",start=start,end=start+3_600_000,calendarTitle="Reunión")
+        var recipeOpened=false
+        compose.setContent{
+            PlanidroidTheme("Claro",false){
+                Home(listOf(task),listOf(event),{},{},{},{},{},0,{},{recipeOpened=true})
+            }
+        }
+        compose.onNodeWithText("Mañana").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("En 2 días").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Vencimientos").assertDoesNotExist()
+        compose.onNodeWithText("Gemini").assertDoesNotExist()
+        compose.onNodeWithText("Recetario").performScrollTo().performClick()
+        compose.runOnIdle{assertTrue(recipeOpened)}
+    }
+
+    @Test fun focusStartsAndPausesAFreeSessionWithAnAmbience(){
+        compose.setContent{PlanidroidTheme("Claro",false){FocusScreen(emptyList()){_,_->}}}
+        compose.onNodeWithText("Mar").performScrollTo().performClick().assertIsSelected()
+        compose.onNodeWithText("Volumen").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Iniciar").performScrollTo().performClick()
+        compose.onNodeWithText("En marcha").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Pausar").performClick()
+        compose.onNodeWithText("Continuar").assertIsDisplayed()
+    }
+
     @Test fun recipeTitleOpensReaderWithIngredientsAndSteps() {
-        val recipe=SavedRecipe(title="Ensalada de tomate",ingredients=listOf(RecipeIngredient("Tomate",2.0,"ud")),
-            steps=listOf("Cortar el tomate y aliñar."))
+        val recipe=SavedRecipe(title="Ensalada de tomate",servings=2,ingredients=listOf(RecipeIngredient("Tomate",2.0,"ud")),
+            steps=List(7){index->"Paso "+(index+1)+": corta el tomate y añade el aliño antes de servir."})
         compose.setContent {
             PlanidroidTheme("Claro",false){
                 CompositionLocalProvider(LocalRecipeLibrary provides RecipeLibrary(listOf(recipe),null)){
@@ -69,10 +100,16 @@ class ReadAndOrganizeTest {
         compose.onNodeWithText("Crear receta").assertIsDisplayed()
         compose.onNodeWithText("Escanear receta").assertIsDisplayed()
         compose.onNodeWithText(recipe.title).performClick()
+        compose.onNodeWithText("Número de personas").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Aumentar número de personas").performClick()
+        compose.onNodeWithText("3 ud").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Tomate",substring=false).assertIsDisplayed()
-        compose.onNodeWithText(recipe.steps.single()).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(recipe.steps.last()).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Editar receta").assertIsDisplayed()
         compose.onNodeWithText("Guardar receta").assertDoesNotExist()
+        compose.onNodeWithText("Elegir ingredientes para la compra").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Añadir 1 ingrediente").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Volver").performClick()
         compose.onNodeWithContentDescription("Volver").performClick()
         compose.onNodeWithText("Buscar receta").assertIsDisplayed()
     }
@@ -112,7 +149,7 @@ class ReadAndOrganizeTest {
         compose.onNodeWithContentDescription("Eliminar "+shelf.name).performClick()
         compose.onNodeWithText("Eliminar",substring=false).performClick()
         compose.onNodeWithText("El interior no tiene compartimentos.").assertIsDisplayed()
-        compose.onNodeWithText("Guardar distribución").performClick()
+        compose.onNodeWithText("Guardar distribución").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle{
             assertTrue(LayoutGrid.zones(checkNotNull(saved).furniture(furniture)).isEmpty())
             assertEquals(item.copy(compartment=UnassignedCompartment),checkNotNull(saved).item(item))

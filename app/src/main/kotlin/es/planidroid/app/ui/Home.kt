@@ -7,18 +7,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import es.planidroid.app.domain.*
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private val spanish=Locale.forLanguageTag("es-ES")
 private fun dayLabel(day:LocalDate,pattern:String="EEEE d 'de' MMMM")=
@@ -26,22 +28,32 @@ private fun dayLabel(day:LocalDate,pattern:String="EEEE d 'de' MMMM")=
 
 @Composable internal fun Home(
     tasks:List<Task>,sessions:List<Session>,openEntry:(Session)->Unit,openTask:(Task)->Unit,
-    inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,taskList:()->Unit,buyCount:Int,
-    focus:()->Unit,assistant:()->Unit
+    inventory:()->Unit,shopping:()->Unit,calendar:()->Unit,buyCount:Int,
+    focus:()->Unit,recipes:()->Unit
 ){
-    val today=LocalDate.now()
-    val now=System.currentTimeMillis()
+    val now by produceState(System.currentTimeMillis()){
+        while(true){
+            value=System.currentTimeMillis()
+            delay(30_000)
+        }
+    }
+    val today=sessionDate(now)
+    var more by rememberSaveable{mutableStateOf(false)}
     val taskMap=tasks.associateBy{it.id}
     val agenda=sessions.filterNot{it.isBreak}.sortedBy{it.start}
-    val upcoming=agenda.filter{!it.done&&it.end>now}.take(4)
     val recent=agenda.filter{it.start<=now&&(it.done||it.end<=now)&&sessionDate(it.end-1)>=today.minusDays(7)}
         .sortedByDescending{it.end}.take(4)
     val todayEntries=agenda.filter{sessionDate(it.start)<=today&&sessionDate(it.end-1)>=today}
     val events=todayEntries.count{it.calendarTitle.isNotBlank()}
     val sessionsToday=todayEntries.size-events
     val anchors=sessions.filter{it.calendarTitle.isNotBlank()}.mapTo(mutableSetOf()){it.taskId}
-    val deadlines=tasks.filter{it.id !in anchors&&it.status !in listOf(Status.DONE,Status.ARCHIVED)&&it.due.isNotBlank()}
-        .sortedBy{it.due}.take(3)
+    val deadlines=tasks.filter{it.id !in anchors&&it.status !in listOf(Status.DONE,Status.ARCHIVED)}
+        .mapNotNull{task->runCatching{LocalDate.parse(task.due)}.getOrNull()?.let{HomeAgendaItem(it,task)}}
+    val planned=agenda.filter{!it.done&&it.end>now}.map{entry->
+        HomeAgendaItem(maxOf(today,sessionDate(entry.start)),taskMap[entry.taskId],entry)
+    }
+    val upcoming=(deadlines+planned).sortedWith(compareBy({it.day},{it.entry?.start?:Long.MAX_VALUE}))
+
 
     BoxWithConstraints(Modifier.fillMaxSize()){
         val wide=maxWidth>=740.dp
@@ -65,7 +77,15 @@ private fun dayLabel(day:LocalDate,pattern:String="EEEE d 'de' MMMM")=
                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
                     Text("A continuación",style=MaterialTheme.typography.titleLarge)
                     if(upcoming.isEmpty())Text("No tienes nada programado.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    upcoming.forEach{entry->AgendaEntryCard(entry,taskMap[entry.taskId],today){openEntry(entry)}}
+                    (if(more)upcoming else upcoming.take(6)).forEach{item->
+                        val entry=item.entry
+                        if(entry!=null)AgendaEntryCard(entry,item.task,today,ongoing=entry.start<=now){openEntry(entry)}
+                        else item.task?.let{task->
+                            HomeAgendaCard(task.title,"Vencimiento",agendaDistance(item.day,today),Icons.Default.Flag,
+                                if(item.day<today)MaterialTheme.colorScheme.error else Peach){openTask(task)}
+                        }
+                    }
+                    if(upcoming.size>6)TextButton(onClick={more=!more}){Text(if(more)"Ver menos" else "Ver más")}
                     if(recent.isNotEmpty()){
                         Spacer(Modifier.height(6.dp))
                         Text("Recientes",style=MaterialTheme.typography.titleLarge)
@@ -81,22 +101,8 @@ private fun dayLabel(day:LocalDate,pattern:String="EEEE d 'de' MMMM")=
                         HomeShortcut("Hogar","Inventario",Icons.Default.Home,Mint,Modifier.weight(1f),inventory)
                     }
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        HomeShortcut("Gemini","Asistente",Icons.Default.AutoAwesome,Lilac,Modifier.weight(1f),assistant)
+                        HomeShortcut("Recetario","Mis recetas",Icons.Default.MenuBook,Lilac,Modifier.weight(1f),recipes)
                         HomeShortcut("Concentración","Temporizador",Icons.Default.Timer,Blue,Modifier.weight(1f),focus)
-                    }
-                    if(deadlines.isNotEmpty()){
-                        Row(verticalAlignment=Alignment.CenterVertically){
-                            Text("Vencimientos",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
-                            TextButton(onClick=taskList){Text("Todas")}
-                        }
-                        deadlines.forEach{task->
-                            Surface(onClick={openTask(task)},shape=RoundedCornerShape(12.dp)){
-                                Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                                    Text(task.title,Modifier.weight(1f),maxLines=2,overflow=TextOverflow.Ellipsis)
-                                    Text(task.due,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -135,21 +141,46 @@ private fun entryTime(entry:Session,today:LocalDate?=null):String{
     }
 }
 
-@Composable internal fun AgendaEntryCard(entry:Session,task:Task?,today:LocalDate,open:()->Unit){
+private data class HomeAgendaItem(val day:LocalDate,val task:Task?,val entry:Session?=null)
+
+internal fun agendaDistance(day:LocalDate,today:LocalDate):String{
+    val days=ChronoUnit.DAYS.between(today,day)
+    return when {
+        days==0L->"Hoy"
+        days==1L->"Mañana"
+        days== -1L->"Ayer"
+        days>1L->"En "+days+" días"
+        else->"Hace "+(-days)+" días"
+    }
+}
+
+@Composable internal fun AgendaEntryCard(entry:Session,task:Task?,today:LocalDate,ongoing:Boolean=false,open:()->Unit){
     val fixed=entry.calendarTitle.isNotBlank()
     val tint=if(fixed)MaterialTheme.colorScheme.tertiary else taskColor(task)
-    Surface(onClick=open,shape=RoundedCornerShape(16.dp),modifier=Modifier.fillMaxWidth()){
+    val kind=if(fixed)"Evento" else if(entry.done)"Sesión completada" else "Sesión"
+    val timing=if(isAllDayEvent(entry))"Todo el día" else time(entry.start)+"–"+time(entry.end)
+    HomeAgendaCard(entryTitle(entry,task),kind+" · "+timing,
+        if(ongoing)"En curso" else agendaDistance(sessionDate(entry.start),today),
+        if(fixed)Icons.Default.Event else if(entry.done)Icons.Default.CheckCircle else Icons.Default.Schedule,tint,open)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun HomeAgendaCard(title:String,detail:String,relative:String,icon:ImageVector,tint:Color,open:()->Unit){
+    Surface(onClick=open,shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth(),
+        color=soft(tint,.10f),border=androidx.compose.foundation.BorderStroke(1.dp,soft(tint,.28f))){
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-            Surface(shape=RoundedCornerShape(12.dp),color=soft(tint,.16f)){
-                Icon(if(fixed)Icons.Default.Event else if(entry.done)Icons.Default.CheckCircle else Icons.Default.Schedule,
-                    null,Modifier.padding(10.dp).size(22.dp),tint=tint)
+            Surface(shape=RoundedCornerShape(12.dp),color=soft(tint,.24f)){
+                Icon(icon,null,Modifier.padding(9.dp).size(23.dp),tint=MaterialTheme.colorScheme.onSurface)
             }
-            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)){
-                Text(entryTitle(entry,task),style=MaterialTheme.typography.titleMedium)
-                Text(entryTime(entry,today),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                val preview=if(fixed)task?.goal?.ifBlank{task.description} else task?.description
-                if(!preview.isNullOrBlank())Text(preview,style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)){
+                Text(title,style=MaterialTheme.typography.titleMedium)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Surface(shape=RoundedCornerShape(8.dp),color=soft(tint,.22f)){
+                        Text(relative,Modifier.padding(horizontal=7.dp,vertical=3.dp),style=MaterialTheme.typography.labelMedium)
+                    }
+                    Text(detail,Modifier.padding(vertical=3.dp),style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Icon(Icons.Default.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
         }

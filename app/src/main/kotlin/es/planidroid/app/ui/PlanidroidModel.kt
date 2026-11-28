@@ -18,7 +18,6 @@ import kotlinx.coroutines.ensureActive
 private val Context.prefs by preferencesDataStore("appearance")
 internal data class ViewPreferences(
     val calendar:String="Semana",
-    val inventory:String="Visual",
     val expiryDays:Int=7,
     val workdaysOnly:Boolean=false,
     val reserveBreaks:Boolean=true,
@@ -52,7 +51,6 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
     internal val viewPreferences=app.prefs.data.map {
         ViewPreferences(
             calendar=it[stringPreferencesKey("calendar_view")] ?: "Semana",
-            inventory=it[stringPreferencesKey("inventory_view")] ?: "Visual",
             expiryDays=it[intPreferencesKey("inventory_expiry_days")] ?: 7,
             workdaysOnly=it[booleanPreferencesKey("agenda_workdays_only")] ?: false,
             reserveBreaks=it[booleanPreferencesKey("agenda_reserve_breaks")] ?: true,
@@ -102,9 +100,17 @@ class PlanidroidModel(private val app: Application): AndroidViewModel(app) {
         },finished)
     }
     internal fun saveAssistantShopping(items:List<Shopping>,list:ShoppingList,create:Boolean,finished:(String?)->Unit){
+        saveShoppingSelection(items,list,create,30,finished)
+    }
+
+    internal fun saveRecipeIngredients(items:List<Shopping>,list:ShoppingList,create:Boolean,finished:(String?)->Unit){
+        saveShoppingSelection(items,list,create,60,finished)
+    }
+
+    private fun saveShoppingSelection(items:List<Shopping>,list:ShoppingList,create:Boolean,limit:Int,finished:(String?)->Unit){
         stockAction({uid->
             db.withTransaction {
-                require(items.size in 1..30)
+                require(items.size in 1..limit)
                 val previous=dao.get(uid,list.id)
                 if(create){
                     require(previous==null&&list.name.isNotBlank()&&list.name.length<=180)

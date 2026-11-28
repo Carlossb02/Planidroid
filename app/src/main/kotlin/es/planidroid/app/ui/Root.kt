@@ -91,6 +91,8 @@ private fun tabIcon(tab:Tab)=when(tab){
     fun navigate(to:Tab){history=ArrayList(pushDestination(history,to.name))}
     val screenState=rememberSaveableStateHolder(); var edit by remember(scope){mutableStateOf<Task?>(null)}; var plan by remember(scope){mutableStateOf<Task?>(null)}
     var calendarFocus by rememberSaveable(scope){mutableStateOf<String?>(null)}
+    var recipesOpen by rememberSaveable(scope){mutableStateOf(false)}
+    var recipePurchase by remember(scope){mutableStateOf<List<Shopping>?>(null)}
     var entryId by rememberSaveable(scope){mutableStateOf<String?>(null)}
     var sessionEdit by rememberSaveable(scope){mutableStateOf<String?>(null)}
     var calendarEdit by remember(scope){mutableStateOf<Pair<CalendarDraft,Boolean>?>(null)};
@@ -98,7 +100,7 @@ private fun tabIcon(tab:Tab)=when(tab){
     var onlineFeature by remember{mutableStateOf<String?>(null)};var agendaPlan by remember(scope){mutableStateOf(false)};var agendaDraft by remember(scope){mutableStateOf<Task?>(null)};val context=LocalContext.current; val snack=remember{SnackbarHostState()}
     LaunchedEffect(importPreview?.id){
         if(importPreview!=null){
-            calendarEdit=null;entryId=null;sessionEdit=null;edit=null;plan=null;agendaPlan=false;agendaDraft=null
+            recipesOpen=false;recipePurchase=null;calendarEdit=null;entryId=null;sessionEdit=null;edit=null;plan=null;agendaPlan=false;agendaDraft=null
             navigate(Tab.CALENDAR)
         }
     }
@@ -117,67 +119,62 @@ private fun tabIcon(tab:Tab)=when(tab){
         es.planidroid.app.update.UpdatePrompt()
         CompositionLocalProvider(LocalOnlineAccess provides { feature -> onlineFeature=feature },LocalRecipeLibrary provides RecipeLibrary(savedRecipes,model),LocalSectionBack provides registerBack,LocalViewPreferences provides preferences) {
         WindowFrame {
-            BoxWithConstraints(Modifier.fillMaxSize()){
-                val wide=maxWidth>=TabletNavigationWidth
-                val destinations=listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES)
-                fun selected(destination:Tab)=tab==destination||
-                    (destination.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS))
-                fun select(destination:Tab){
-                    navigate(destination);edit=null;plan=null;agendaPlan=false;agendaDraft=null
-                }
-                Row(Modifier.fillMaxSize()){
-                    if(wide)NavigationRail(windowInsets=WindowInsets(0,0,0,0),containerColor=MaterialTheme.colorScheme.surface){
-                        destinations.forEach{destination->
-                            NavigationRailItem(selected(destination),{select(destination)},
-                                icon={Icon(tabIcon(destination),null)},label={Text(destination.label)})
-                        }
+            val destinations=listOf(Tab.HOME,Tab.CALENDAR,Tab.CAPTURE,Tab.TASKS,Tab.SPACES)
+            fun selected(destination:Tab)=tab==destination||
+                (destination.name==history.dropLast(1).lastOrNull()&&tab in listOf(Tab.INVENTORY,Tab.SHOPPING,Tab.SHARED,Tab.TOOLS))
+            fun select(destination:Tab){
+                navigate(destination);edit=null;plan=null;agendaPlan=false;agendaDraft=null
+            }
+            Scaffold(
+                modifier=Modifier.fillMaxSize(),
+                contentWindowInsets=WindowInsets(0,0,0,0),
+                containerColor=MaterialTheme.colorScheme.background,
+                snackbarHost={SnackbarHost(snack)},
+                topBar={
+                    Row(Modifier.fillMaxWidth().padding(horizontal=ScreenGutter,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                        if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
+                        Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
+                        ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})
                     }
-                    Scaffold(
-                        modifier=Modifier.weight(1f),
-                        contentWindowInsets=WindowInsets(0,0,0,0),
-                        containerColor=MaterialTheme.colorScheme.background,
-                        snackbarHost={SnackbarHost(snack)},
-                        topBar={
-                            Row(Modifier.fillMaxWidth().padding(horizontal=ScreenGutter,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
-                                if(history.size>1&&sectionBack==null)IconButton(onClick={back()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Volver")}
-                                Text(screenTitle(tab),style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
-                                ProfileAvatar(scope,onClick={navigate(Tab.SETTINGS);edit=null;plan=null;agendaPlan=false})
-                            }
-                        },
-                        bottomBar={
-                            if(!wide&&!keyboardOpen)NavigationBar(windowInsets=WindowInsets(0,0,0,0),tonalElevation=0.dp){
+                },
+                bottomBar={
+                    if(!keyboardOpen)Surface(color=MaterialTheme.colorScheme.surface){
+                        Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){
+                            NavigationBar(Modifier.widthIn(max=680.dp).fillMaxWidth(),windowInsets=WindowInsets(0,0,0,0),
+                                containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){
                                 destinations.forEach{destination->
                                     NavigationBarItem(selected(destination),{select(destination)},icon={Icon(tabIcon(destination),null)},
-                                        label={Text(destination.label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelSmall)})
+                                        label={Text(destination.label,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                            style=MaterialTheme.typography.labelSmall)})
                                 }
                             }
                         }
-                    ){pad->
-                        Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)){
-                            screenState.SaveableStateProvider(tab.name){
-                                when(tab){
-                                    Tab.HOME->Home(tasks,sessions,{entryId=it.id},{edit=it},
-                                        {navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},{navigate(Tab.TASKS)},
-                                        shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},
-                                        {navigate(Tab.FOCUS)},{navigate(Tab.ASSISTANT)})
-                                    Tab.FOCUS->FocusScreen(actionable){id,min->model.logFocus(id,min)}
-                                    Tab.TASKS->TaskList(actionable,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)},{task,status->model.changeTaskStatus(task.id,status)})
-                                    Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},
-                                        {agendaDraft=null;agendaPlan=true},addEvent={day->
-                                            val start=day.atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                            calendarEdit=CalendarDraft(newId(),"",start,start+3_600_000L) to false
-                                        },importFile={importFile.launch(arrayOf("text/calendar","text/x-vcalendar","application/ics","application/icalendar","application/octet-stream"))},
-                                        openEvent={entry->entryId=entry.id},focusDay=calendarFocus,consumeFocus={calendarFocus=null})
-                                    Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);navigate(Tab.TASKS)},{created->plan=created;navigate(Tab.TASKS)},{prefill->edit=prefill},compactAvailability)
-                                    Tab.ASSISTANT->AssistantScreen(scope,actionable,shoppingLists,model,{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
-                                    Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.SHARED)},{navigate(Tab.ASSISTANT)},{navigate(Tab.TOOLS)})
-                                    Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
-                                    Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
-                                    Tab.SHARED->SharedScreen(scope)
-                                    Tab.SETTINGS->SettingsScreen(model,scope)
-                                    Tab.TOOLS->ToolsScreen(model,scope)
-                                }
-                            }
+                    }
+                }
+            ){pad->
+                Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad)){
+                    screenState.SaveableStateProvider(tab.name){
+                        when(tab){
+                            Tab.HOME->Home(tasks,sessions,{entryId=it.id},{edit=it},
+                                {navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.CALENDAR)},
+                                shopping.count{ShoppingLogic.needed(it,inventory.find{p->p.id==it.itemId})>0},
+                                {navigate(Tab.FOCUS)},{recipesOpen=true})
+                            Tab.FOCUS->FocusScreen(actionable){id,min->model.logFocus(id,min)}
+                            Tab.TASKS->TaskList(actionable,{edit=it},{navigate(Tab.CAPTURE)},{model.delete(it.id,Kind.TASK)},{task,status->model.changeTaskStatus(task.id,status)})
+                            Tab.CALENDAR->CalendarScreen(tasks,sessions,{edit=it},{model.save(listOf(it))},{model.delete(it.id,Kind.SESSION)},
+                                {agendaDraft=null;agendaPlan=true},addEvent={day->
+                                    val start=day.atTime(9,0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                    calendarEdit=CalendarDraft(newId(),"",start,start+3_600_000L) to false
+                                },importFile={importFile.launch(arrayOf("text/calendar","text/x-vcalendar","application/ics","application/icalendar","application/octet-stream"))},
+                                openEvent={entry->entryId=entry.id},focusDay=calendarFocus,consumeFocus={calendarFocus=null})
+                            Tab.CAPTURE->Capture(scope,{created->model.saveTasks(created);navigate(Tab.TASKS)},{created->plan=created;navigate(Tab.TASKS)},{prefill->edit=prefill},compactAvailability)
+                            Tab.ASSISTANT->AssistantScreen(scope,actionable,shoppingLists,model,{plan=it;navigate(Tab.CALENDAR)},compactAvailability)
+                            Tab.SPACES->SpacesHub(groups,tasks,{model.save(it)},{model.delete(it.id,Kind.GROUP)},{edit=it},{navigate(Tab.INVENTORY)},{navigate(Tab.SHOPPING)},{navigate(Tab.SHARED)},{navigate(Tab.ASSISTANT)},{navigate(Tab.TOOLS)})
+                            Tab.INVENTORY->HomesScreen(scope,homes,furniture,inventory,model,lists=shoppingLists)
+                            Tab.SHOPPING->ShoppingListsScreen(scope,shoppingLists,shopping,purchases,inventory,model)
+                            Tab.SHARED->SharedScreen(scope)
+                            Tab.SETTINGS->SettingsScreen(model,scope)
+                            Tab.TOOLS->ToolsScreen(model,scope)
                         }
                     }
                 }
@@ -186,6 +183,15 @@ private fun tabIcon(tab:Tab)=when(tab){
         fun requestEventReminder(remind:Boolean){
             if(remind&&Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                 permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if(recipesOpen)RecipeSuggestions(scope,emptyList(),"",{recipesOpen=false},{recipePurchase=it})
+        recipePurchase?.let{products->
+            ReviewAssistantShopping(products,rememberPersonalShoppingLists(scope,shoppingLists),{recipePurchase=null}){entries,list,newList,done->
+                model.saveRecipeIngredients(entries,list,newList){failure->
+                    done(failure)
+                    if(failure==null)recipePurchase=null
+                }
+            }
         }
         sessions.find{it.id==entryId}?.let{entry->
             val task=tasks.find{it.id==entry.taskId}

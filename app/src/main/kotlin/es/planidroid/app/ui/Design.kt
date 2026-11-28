@@ -28,7 +28,6 @@ fun taskColor(task:Task?):Color {
     return taskPalette[Math.floorMod(identity.hashCode(),taskPalette.size)]
 }
 
-internal val TabletNavigationWidth=840.dp
 internal val ScreenGutter=16.dp
 
 @Composable internal fun WindowFrame(content:@Composable ()->Unit){

@@ -29,12 +29,7 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
     val scope=rememberCoroutineScope()
     val scroll=rememberScrollState()
     val eligible=tasks.filter{it.status in setOf(Status.PENDING,Status.ACTIVE)&&TaskConstraints.unmet(it,tasks).isEmpty()}
-    val cloud=remember(uid){if(uid=="local")null else runCatching{SharedCloud(context)}.getOrNull()}
-    var shared by remember(uid){mutableStateOf(cloud?.cached()?.first.orEmpty())}
-    LaunchedEffect(cloud){cloud?.observeCached()?.collect{shared=it.first}}
-    val personalLists=lists.filter{list->
-        shared.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==list.id}
-    }
+    val personalLists=rememberPersonalShoppingLists(uid,lists)
     var input by rememberSaveable(uid){mutableStateOf("")}
     var turns by remember(uid){mutableStateOf(emptyList<GeminiTurn>())}
     var pending by remember(uid){mutableStateOf<GeminiTurn?>(null)}
@@ -176,6 +171,16 @@ private data class GeminiTurn(val id:String,val question:String,val answer:Strin
         busy=true;error=""
         save(outgoing){failure->busy=false;error=failure.orEmpty()}
     }){Text("Guardar")}},dismissButton={TextButton(enabled=!busy,onClick=close){Text("Cancelar")}})
+}
+
+@Composable internal fun rememberPersonalShoppingLists(uid:String,lists:List<ShoppingList>):List<ShoppingList>{
+    val context=LocalContext.current
+    val cloud=remember(uid){if(uid=="local")null else runCatching{SharedCloud(context)}.getOrNull()}
+    var shared by remember(uid){mutableStateOf(cloud?.cached()?.first.orEmpty())}
+    LaunchedEffect(cloud){cloud?.observeCached()?.collect{shared=it.first}}
+    return lists.filter{list->
+        shared.none{it.kind=="shopping_list"&&it.role=="owner"&&it.sourceId==list.id}
+    }
 }
 
 @Composable internal fun ReviewAssistantShopping(

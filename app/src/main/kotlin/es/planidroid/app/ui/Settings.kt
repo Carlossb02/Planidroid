@@ -65,9 +65,6 @@ import kotlinx.coroutines.CancellationException
         Choice("Vista inicial del calendario",listOf("Día","Semana","Mes","Agenda"),preferences.calendar,{it}){
             model.viewSetting(stringPreferencesKey("calendar_view"),it)
         }
-        Choice("Vista inicial de los muebles",listOf("Visual","Lista"),preferences.inventory,{it}){
-            model.viewSetting(stringPreferencesKey("inventory_view"),it)
-        }
         Choice("Mostrar caducidades",listOf(3,7,14,30),preferences.expiryDays,{"Próximos "+it+" días"}){
             model.viewSetting(intPreferencesKey("inventory_expiry_days"),it)
         }
